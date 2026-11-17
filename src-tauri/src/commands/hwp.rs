@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
 use zip::ZipArchive;
+use log::{error, warn};
 
 use crate::parsers::hwpx::{self, HwpTable};
 
@@ -22,14 +23,17 @@ pub fn parse_hwpx_tables(path: String) -> Result<Vec<HwpTable>, String> {
                 .unwrap_or("")
                 .to_ascii_lowercase();
             if ext == "hwp" {
-                Err(format!(
+                let msg = format!(
                     "HWP 파일을 열 수 없습니다 ({}).\n\
                      구버전 바이너리 형식일 수 있습니다.\n\
                      한글에서 '다른 이름으로 저장 → HWPX' 후 다시 시도하거나,\n\
                      이미 HWPX라면 확장자를 .hwpx 로 바꿔 주세요.",
                     e
-                ))
+                );
+                warn!("parse_hwpx_tables: {}", msg);
+                Err(msg)
             } else {
+                error!("parse_hwpx_tables [{}]: {}", path, e);
                 Err(e.to_string())
             }
         }
@@ -98,11 +102,15 @@ Write-Host 'done'
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("HWP 변환 실패: {}", stderr));
+        let msg = format!("HWP 변환 실패: {}", stderr);
+        error!("convert_hwp_to_hwpx [{}]: {}", hwp_path, msg);
+        return Err(msg);
     }
 
     if !out.exists() {
-        return Err("변환된 HWPX 파일을 찾을 수 없습니다. 한글이 설치되어 있는지 확인하세요.".to_string());
+        let msg = "변환된 HWPX 파일을 찾을 수 없습니다. 한글이 설치되어 있는지 확인하세요.".to_string();
+        error!("convert_hwp_to_hwpx [{}]: {}", hwp_path, msg);
+        return Err(msg);
     }
 
     Ok(out_str)

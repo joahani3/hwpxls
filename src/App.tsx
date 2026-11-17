@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { AlertCircle, Bug } from "lucide-react";
+import { AlertCircle, Bug, Info } from "lucide-react";
 
 import {
   HwpTable,
@@ -16,6 +16,7 @@ import { MappingPanel } from "./components/MappingPanel";
 import { MergeDialog } from "./components/MergeDialog";
 import { AutoMappingDialog } from "./components/AutoMappingDialog";
 import { ExcelPreviewDialog } from "./components/ExcelPreviewDialog";
+import { InfoDialog } from "./components/InfoDialog";
 
 interface PendingMapping {
   hwpSelected: SelectedHwpCell;
@@ -37,6 +38,7 @@ export default function App() {
 
   const [showAutoMapping, setShowAutoMapping] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
   // 자동 매핑을 이미 띄운 파일 조합 추적 (같은 조합 중복 팝업 방지)
   const autoMappingShownKey = useRef("");
 
@@ -162,10 +164,11 @@ export default function App() {
     setSelectedHwpCell(null);
   };
 
-  // 자동 매핑 적용
+  // 자동 매핑 적용 → 미리보기 바로 오픈
   const applyAutoMappings = (newMappings: CellMapping[]) => {
     setMappings((prev) => [...prev, ...newMappings]);
     setShowAutoMapping(false);
+    if (newMappings.length > 0) setShowPreview(true);
   };
 
   // 매핑 삭제
@@ -241,6 +244,14 @@ export default function App() {
             <Bug size={12} /> 구조보기
           </button>
         )}
+
+        <button
+          onClick={() => setShowInfo(true)}
+          className="p-1.5 text-gray-400 hover:text-blue-500 transition-colors"
+          title="앱 정보"
+        >
+          <Info size={16} />
+        </button>
       </header>
 
       {/* 에러 표시 */}
@@ -302,6 +313,18 @@ export default function App() {
               onConvert={template ? () => setShowPreview(true) : undefined}
               onAutoMap={hwpTables.length > 0 && template ? () => setShowAutoMapping(true) : undefined}
               hwpLoaded={hwpTables.length > 0 && !!template}
+              autoMapDone={(() => {
+                if (!template || hwpTables.length === 0 || mappings.length === 0) return false;
+                // 현재 활성 시트의 헤더 셀(값 있는 것)이 모두 매핑됐는지 확인
+                const sheet = template.sheets[activeSheet];
+                if (!sheet) return false;
+                const hwpTable = hwpTables[0];
+                if (!hwpTable) return false;
+                // 매핑된 HWP 열 수 = 전체 HWP 헤더 열 수(0행 기준)
+                const hwpHeaderCols = hwpTable.cells.filter(c => c.row === 0).length;
+                const mappedCols = new Set(mappings.map(m => m.hwp_col)).size;
+                return hwpHeaderCols > 0 && mappedCols >= hwpHeaderCols;
+              })()}
             />
           </div>
         </div>
@@ -329,6 +352,9 @@ export default function App() {
           onClose={() => setShowPreview(false)}
         />
       )}
+
+      {/* 앱 정보 다이얼로그 */}
+      {showInfo && <InfoDialog onClose={() => setShowInfo(false)} />}
 
       {/* 자동 매핑 다이얼로그 */}
       {showAutoMapping && template && (

@@ -13,6 +13,7 @@ interface Props {
   onConvert?: () => void;
   onAutoMap?: () => void;
   hwpLoaded?: boolean;
+  autoMapDone?: boolean;
 }
 
 function colLetter(col: number): string {
@@ -27,7 +28,7 @@ function colLetter(col: number): string {
 }
 
 export function ExcelTemplateView({
-  template, activeSheetIdx, onSheetChange, onCellClick, mappings, pendingHwpSelected, onOpen, onConvert, onAutoMap, hwpLoaded,
+  template, activeSheetIdx, onSheetChange, onCellClick, mappings, pendingHwpSelected, onOpen, onConvert, onAutoMap, hwpLoaded, autoMapDone,
 }: Props) {
   if (!template) {
     return (
@@ -150,11 +151,16 @@ export function ExcelTemplateView({
               {/* 자동 매핑 — 한글+엑셀 둘 다 열렸을 때 */}
               {hwpLoaded && onAutoMap && (
                 <button
-                  onClick={onAutoMap}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white rounded-full shadow-lg hover:bg-purple-700 active:scale-95 transition-all font-bold text-sm whitespace-nowrap"
-                  style={{ boxShadow: "0 4px 20px rgba(124,58,237,0.4)" }}
+                  onClick={!autoMapDone ? onAutoMap : undefined}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-full shadow-lg transition-all font-bold text-sm whitespace-nowrap ${
+                    autoMapDone
+                      ? "bg-gray-300 text-gray-500 cursor-default shadow-none"
+                      : "bg-purple-600 text-white hover:bg-purple-700 active:scale-95"
+                  }`}
+                  style={!autoMapDone ? { boxShadow: "0 4px 20px rgba(124,58,237,0.4)" } : undefined}
                 >
-                  <Sparkles size={15} /> 자동 매핑
+                  <Sparkles size={15} />
+                  {autoMapDone ? "자동매핑 완료" : "자동 매핑"}
                 </button>
               )}
               {/* 변환 시작 — 매핑이 있을 때 */}

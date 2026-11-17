@@ -1,5 +1,6 @@
 use std::io::BufReader;
 use std::path::Path;
+use log::error;
 
 use calamine::{Data, Reader, Xlsx, open_workbook};
 use quick_xml::events::Event;
@@ -130,7 +131,11 @@ fn parse_cell_ref(s: &str) -> Option<(u32, u32)> {
 pub fn read_excel_template(path: String) -> Result<ExcelTemplate, String> {
     let p = Path::new(&path);
     let mut workbook: Xlsx<std::io::BufReader<std::fs::File>> =
-        open_workbook(p).map_err(|err: calamine::XlsxError| err.to_string())?;
+        open_workbook(p).map_err(|err: calamine::XlsxError| {
+            let msg = err.to_string();
+            error!("read_excel_template [{}]: {}", path, msg);
+            msg
+        })?;
     let sheet_names: Vec<String> = workbook.sheet_names().to_vec();
 
     let mut sheets = Vec::new();
@@ -276,6 +281,10 @@ pub fn export_excel(
         }
     }
 
-    workbook.save(&output_path).map_err(|e| e.to_string())?;
+    workbook.save(&output_path).map_err(|e| {
+        let msg = e.to_string();
+        error!("export_excel [{}]: {}", output_path, msg);
+        msg
+    })?;
     Ok(())
 }
