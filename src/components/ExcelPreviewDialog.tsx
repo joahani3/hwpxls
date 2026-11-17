@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { X, Download } from "lucide-react";
+import { X, Download, CheckCircle, FolderOpen, FileSpreadsheet } from "lucide-react";
+import { open as openPath } from "@tauri-apps/plugin-shell";
 import { HwpTable, ExcelTemplate, ExcelCell, CellMapping } from "../types";
 
 interface Props {
   hwpTables: HwpTable[];
   template: ExcelTemplate;
   mappings: CellMapping[];
-  onExport: () => void;
+  onExport: () => Promise<string | null>;
   onClose: () => void;
   loading?: boolean;
 }
@@ -24,16 +25,39 @@ function colLetter(col: number): string {
 
 export function ExcelPreviewDialog({ hwpTables, template, mappings, onExport, onClose, loading }: Props) {
   const [activeSheet, setActiveSheet] = useState(0);
+  const [savedPath, setSavedPath] = useState<string | null>(null);
+
+  const handleExport = async () => {
+    const path = await onExport();
+    if (path) setSavedPath(path);
+  };
+
+  // 파일 열기 (기본 앱 = Excel)
+  const openFile = () => savedPath && openPath(savedPath);
+
+  // 폴더 열기 (Windows Explorer)
+  const openFolder = () => {
+    if (!savedPath) return;
+    const folder = savedPath.replace(/[/\\][^/\\]+$/, "");
+    openPath(folder);
+  };
   const sheet = template.sheets[activeSheet];
 
   // (sheet, row, col) → 삽입될 HWP 텍스트
+  // export_excel과 동일하게: 헤더 아래 데이터 행을 열 단위로 채움
   const valueMap = new Map<string, string>();
   for (const m of mappings) {
-    const text =
-      hwpTables[m.hwp_table_idx]?.cells.find(
-        (c) => c.row === m.hwp_row && c.col === m.hwp_col
-      )?.text ?? "";
-    valueMap.set(`${m.excel_sheet}:${m.excel_row}:${m.excel_col}`, text);
+    const table = hwpTables[m.hwp_table_idx];
+    if (!table) continue;
+
+    const dataRows = table.cells
+      .filter((c) => c.col === m.hwp_col && c.row > m.hwp_row)
+      .sort((a, b) => a.row - b.row);
+
+    dataRows.forEach((hwpCell, offset) => {
+      const excelRow = m.excel_row + 1 + offset;
+      valueMap.set(`${m.excel_sheet}:${excelRow}:${m.excel_col}`, hwpCell.text);
+    });
   }
 
   if (!sheet) return null;
@@ -54,8 +78,23 @@ export function ExcelPreviewDialog({ hwpTables, template, mappings, onExport, on
     }
   }
 
-  const rows = Array.from({ length: sheet.max_row }, (_, i) => i);
-  const cols = Array.from({ length: sheet.max_col }, (_, i) => i);
+  // 데이터가 채워질 행까지 그리드 확장
+  let previewMaxRow = sheet.max_row;
+  let previewMaxCol = sheet.max_col;
+  for (const m of mappings) {
+    if (m.excel_sheet !== activeSheet) continue;
+    const table = hwpTables[m.hwp_table_idx];
+    if (!table) continue;
+    const dataCount = table.cells.filter(
+      (c) => c.col === m.hwp_col && c.row > m.hwp_row
+    ).length;
+    const neededRow = m.excel_row + 1 + dataCount;
+    if (neededRow > previewMaxRow) previewMaxRow = neededRow;
+    if (m.excel_col + 1 > previewMaxCol) previewMaxCol = m.excel_col + 1;
+  }
+
+  const rows = Array.from({ length: previewMaxRow }, (_, i) => i);
+  const cols = Array.from({ length: previewMaxCol }, (_, i) => i);
 
   const mappedCount = mappings.filter((m) => m.excel_sheet === activeSheet).length;
 
@@ -66,16 +105,40 @@ export function ExcelPreviewDialog({ hwpTables, template, mappings, onExport, on
         {/* 헤더 */}
         <div className="flex items-center gap-3 px-5 py-3.5 border-b border-gray-100 shrink-0">
           <span className="text-sm font-bold text-gray-800">변환 미리보기</span>
-          <span className="text-xs text-gray-400">
-            이 모습으로 엑셀이 저장됩니다
-          </span>
-          <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
             {mappedCount}개 셀 채워짐
           </span>
+          {savedPath && (
+            <span className="flex items-center gap-1 text-xs bg-emerald-500 text-white px-2 py-0.5 rounded-full font-medium">
+              <CheckCircle size={11} /> 저장 완료
+            </span>
+          )}
           <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-600">
             <X size={16} />
           </button>
         </div>
+
+        {/* 저장 완료 배너 */}
+        {savedPath && (
+          <div className="flex items-center gap-3 px-5 py-2.5 bg-emerald-50 border-b border-emerald-100 shrink-0">
+            <CheckCircle size={14} className="text-emerald-500 shrink-0" />
+            <span className="text-xs text-emerald-700 font-medium truncate flex-1" title={savedPath}>
+              {savedPath}
+            </span>
+            <button
+              onClick={openFile}
+              className="flex items-center gap-1 px-3 py-1 text-xs bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 font-medium shrink-0"
+            >
+              <FileSpreadsheet size={11} /> 파일 열기
+            </button>
+            <button
+              onClick={openFolder}
+              className="flex items-center gap-1 px-3 py-1 text-xs text-emerald-700 border border-emerald-300 rounded-lg hover:bg-emerald-100 shrink-0"
+            >
+              <FolderOpen size={11} /> 폴더 열기
+            </button>
+          </div>
+        )}
 
         {/* 시트 탭 */}
         {template.sheets.length > 1 && (
@@ -179,12 +242,12 @@ export function ExcelPreviewDialog({ hwpTables, template, mappings, onExport, on
             취소
           </button>
           <button
-            onClick={onExport}
+            onClick={handleExport}
             disabled={loading}
             className="flex items-center gap-1.5 px-5 py-1.5 text-xs bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 font-medium"
           >
             <Download size={12} />
-            {loading ? "저장 중..." : "엑셀로 저장"}
+            {loading ? "저장 중..." : savedPath ? "다른 이름으로 저장" : "저장"}
           </button>
         </div>
       </div>

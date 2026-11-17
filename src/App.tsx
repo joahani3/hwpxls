@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { FileSpreadsheet, FileText, Download, AlertCircle, Bug, Sparkles } from "lucide-react";
+import { AlertCircle, Bug } from "lucide-react";
 
 import {
   HwpTable,
@@ -173,16 +173,16 @@ export default function App() {
     setMappings((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  // 엑셀 출력
-  const exportExcel = async () => {
-    if (!template || mappings.length === 0) return;
+  // 엑셀 출력 — 저장된 경로 반환 (성공 시), null (취소/실패)
+  const exportExcel = async (): Promise<string | null> => {
+    if (!template || mappings.length === 0) return null;
     setError(null);
 
     const outputPath = await save({
       filters: [{ name: "Excel 파일", extensions: ["xlsx"] }],
       defaultPath: "output.xlsx",
     });
-    if (!outputPath) return;
+    if (!outputPath) return null;
 
     setLoading(true);
     try {
@@ -193,9 +193,10 @@ export default function App() {
         mappings,
         sheetIdx: activeSheet,
       });
-      setError(null);
+      return outputPath;
     } catch (e) {
       setError(String(e));
+      return null;
     } finally {
       setLoading(false);
     }
@@ -214,24 +215,6 @@ export default function App() {
       <header className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-3 shrink-0">
         <h1 className="text-sm font-bold text-gray-800 mr-2">hwpxls</h1>
 
-        <button
-          onClick={openHwpFile}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 transition-colors"
-        >
-          <FileText size={13} />
-          한글 파일 열기
-        </button>
-
-        <button
-          onClick={openExcelTemplate}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50 transition-colors"
-        >
-          <FileSpreadsheet size={13} />
-          엑셀 템플릿 열기
-        </button>
-
         <div className="flex-1" />
 
         {hwpPath && (
@@ -243,14 +226,6 @@ export default function App() {
           </span>
         )}
 
-        {hwpTables.length > 0 && template && (
-          <button
-            onClick={() => setShowAutoMapping(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-purple-500 text-white rounded-md hover:bg-purple-600 transition-colors"
-          >
-            <Sparkles size={12} /> 자동 매핑
-          </button>
-        )}
 
         {hwpPath && (
           <button
@@ -266,15 +241,6 @@ export default function App() {
             <Bug size={12} /> 구조보기
           </button>
         )}
-
-        <button
-          onClick={() => setShowPreview(true)}
-          disabled={loading || mappings.length === 0 || !template}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-40 transition-colors"
-        >
-          <Download size={13} />
-          변환 시작 ({mappings.length})
-        </button>
       </header>
 
       {/* 에러 표시 */}
@@ -314,6 +280,7 @@ export default function App() {
               selectedCell={selectedHwpCell}
               onCellClick={handleHwpCellClick}
               mappings={mappings}
+              onOpen={openHwpFile}
             />
           </div>
         </div>
@@ -331,6 +298,10 @@ export default function App() {
               onCellClick={handleExcelCellClick}
               mappings={mappings}
               pendingHwpSelected={!!selectedHwpCell}
+              onOpen={openExcelTemplate}
+              onConvert={template ? () => setShowPreview(true) : undefined}
+              onAutoMap={hwpTables.length > 0 && template ? () => setShowAutoMapping(true) : undefined}
+              hwpLoaded={hwpTables.length > 0 && !!template}
             />
           </div>
         </div>
@@ -343,8 +314,6 @@ export default function App() {
         </div>
         <MappingPanel
           mappings={mappings}
-          hwpTables={hwpTables}
-          template={template}
           onDelete={deleteMapping}
         />
       </div>
@@ -356,7 +325,7 @@ export default function App() {
           template={template}
           mappings={mappings}
           loading={loading}
-          onExport={async () => { await exportExcel(); setShowPreview(false); }}
+          onExport={exportExcel}
           onClose={() => setShowPreview(false)}
         />
       )}

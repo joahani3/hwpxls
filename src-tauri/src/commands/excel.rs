@@ -245,21 +245,34 @@ pub fn export_excel(
         }
     }
 
-    // 3. 매핑된 한글 셀 값 쓰기
+    // wrap_text 포맷: 개행 포함 셀에 사용
+    let wrap_fmt = Format::new().set_text_wrap();
+
+    // 3. 매핑: HWP 헤더 셀 아래 데이터 행을 열 단위로 복사
+    //    hwp_row / excel_row = 헤더 행 → 데이터는 그 다음 행부터
     for mapping in &mappings {
         let table = hwp_tables.get(mapping.hwp_table_idx)
             .ok_or(format!("표 인덱스 {} 없음", mapping.hwp_table_idx))?;
 
-        let hwp_cell = table.cells.iter().find(|c| {
-            c.row == mapping.hwp_row && c.col == mapping.hwp_col
-        });
+        // 같은 열에서 헤더 행보다 아래에 있는 셀들을 행 순서로 수집
+        let mut data_rows: Vec<_> = table.cells.iter()
+            .filter(|c| c.col == mapping.hwp_col && c.row > mapping.hwp_row)
+            .collect();
+        data_rows.sort_by_key(|c| c.row);
 
-        if let Some(cell) = hwp_cell {
-            ws.write_string(
-                mapping.excel_row,
-                mapping.excel_col as u16,
-                &cell.text,
-            ).map_err(|e| e.to_string())?;
+        for (offset, hwp_cell) in data_rows.iter().enumerate() {
+            let excel_row = mapping.excel_row + 1 + offset as u32;
+            if !hwp_cell.text.is_empty() {
+                if hwp_cell.text.contains('\n') {
+                    ws.write_string_with_format(
+                        excel_row, mapping.excel_col as u16,
+                        &hwp_cell.text, &wrap_fmt,
+                    ).map_err(|e| e.to_string())?;
+                } else {
+                    ws.write_string(excel_row, mapping.excel_col as u16, &hwp_cell.text)
+                        .map_err(|e| e.to_string())?;
+                }
+            }
         }
     }
 

@@ -231,16 +231,30 @@ pub fn extract_tables(xml_content: &str) -> Result<Vec<HwpTable>, ParseError> {
                 }
 
                 match tag.as_str() {
+                    "p" => {
+                        // 단락 끝 → 셀 텍스트에 줄바꿈 추가 (다단락 셀 지원)
+                        if in_tc && tc_start_depth > 0 {
+                            if !cell_text.is_empty() {
+                                cell_text.push('\n');
+                            }
+                            tc_start_depth -= 1;
+                        } else if in_tc && tc_start_depth == 0 {
+                            if !cell_text.is_empty() {
+                                cell_text.push('\n');
+                            }
+                        }
+                    }
                     "tc" => {
                         if in_tc {
                             if tc_start_depth == 0 {
-                                // 현재 tc의 종료
+                                // 현재 tc의 종료 — trim 후 중복 개행 정리
+                                let text = cell_text.trim().to_string();
                                 cells.push(HwpCell {
                                     row: cur_row,
                                     col: cur_col,
                                     row_span,
                                     col_span,
-                                    text: cell_text.trim().to_string(),
+                                    text,
                                 });
                                 // 병합 셀 점유 위치 등록
                                 for dr in 0..row_span {

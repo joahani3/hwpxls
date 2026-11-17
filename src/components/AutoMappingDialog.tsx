@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useRef, useLayoutEffect } from "react";
 import { Sparkles, Check, X, ChevronDown, Zap } from "lucide-react";
 import { HwpTable, ExcelTemplate, ExcelCell, CellMapping } from "../types";
+import { mappingColor } from "../mappingColors";
 
 interface Pair {
+  hwpRow: number;   // 추가: 행도 추적
   hwpCol: number;
   hwpText: string;
   excelRow: number;
@@ -23,76 +25,73 @@ function normalize(text: string): string {
   return text.trim().replace(/\s+/g, "").toLowerCase();
 }
 
-export function AutoMappingDialog({
-  hwpTables,
-  template,
-  onApply,
-  onClose,
-}: Props) {
+export function AutoMappingDialog({ hwpTables, template, onApply, onClose }: Props) {
   const [selHwpTable, setSelHwpTable] = useState(0);
+  const [hwpHeaderRows, setHwpHeaderRows] = useState<number[]>([0]); // 0-based 선택 행 인덱스
   const [selExcelSheet, setSelExcelSheet] = useState(0);
-  const [headerRows, setHeaderRows] = useState(1);
+  const [headerRows, setHeaderRows] = useState<number[]>([0]); // 0-based 선택 행 인덱스
 
-  // 현재 선택된 HWP 헤더 열 (null = 미선택)
-  const [activeHwpCol, setActiveHwpCol] = useState<number | null>(null);
-  // 확정된 쌍 목록
+  // 현재 선택된 HWP 셀 (행·열 모두 추적)
+  const [activeHwpCell, setActiveHwpCell] = useState<{ row: number; col: number } | null>(null);
   const [pairs, setPairs] = useState<Pair[]>([]);
 
   const table = hwpTables[selHwpTable];
   const sheet = template.sheets[selExcelSheet];
 
-  // HWP 헤더 셀 (행 0)
-  const hwpHeaders = table?.cells.filter((c) => c.row === 0) ?? [];
-
-  // 엑셀 헤더 영역 셀 (0 ~ headerRows-1 행, 값 있는 것)
+  const hwpHeaders = table?.cells.filter((c) => hwpHeaderRows.includes(c.row)) ?? [];
   const excelHeaders: ExcelCell[] =
-    sheet?.cells.filter((c) => c.row < headerRows && (c.value ?? "").trim()) ?? [];
+    sheet?.cells.filter((c) => headerRows.includes(c.row) && (c.value ?? "").trim()) ?? [];
 
-  // 이미 쌍이 맞춰진 HWP 열 / 엑셀 셀 집합
-  const pairedHwpCols = new Set(pairs.map((p) => p.hwpCol));
+  // 쌍 맞춤 여부: 행·열 조합으로 비교
+  const pairedHwpKeys = new Set(pairs.map((p) => `${p.hwpRow}:${p.hwpCol}`));
   const pairedExcelKeys = new Set(pairs.map((p) => `${p.excelRow}:${p.excelCol}`));
 
-  // 엑셀 셀 클릭
+  // 엑셀 셀 클릭 → HWP 셀과 쌍 맞춤 (이미 매핑된 셀이면 교체)
   const handleExcelClick = (ec: ExcelCell) => {
-    const excelKey = `${ec.row}:${ec.col}`;
-    if (pairedExcelKeys.has(excelKey)) return; // 이미 쌍 맞춤
+    if (!activeHwpCell) return;
 
-    if (activeHwpCol === null) return; // HWP 셀 먼저 선택 필요
-
-    const hwpCell = hwpHeaders.find((c) => c.col === activeHwpCol);
+    const hwpCell = hwpHeaders.find(
+      (c) => c.row === activeHwpCell.row && c.col === activeHwpCell.col
+    );
     if (!hwpCell) return;
 
-    setPairs((prev) => [
-      ...prev,
-      {
-        hwpCol: activeHwpCol,
-        hwpText: hwpCell.text,
-        excelRow: ec.row,
-        excelCol: ec.col,
-        excelText: ec.value ?? "",
-        excelAddress: ec.address,
-      },
-    ]);
-    setActiveHwpCol(null);
+    setPairs((prev) => {
+      // 이 엑셀 셀을 쓰던 기존 쌍 제거 → 새 쌍으로 교체
+      const filtered = prev.filter(
+        (p) => !(p.excelRow === ec.row && p.excelCol === ec.col)
+      );
+      return [
+        ...filtered,
+        {
+          hwpRow: activeHwpCell.row,
+          hwpCol: activeHwpCell.col,
+          hwpText: hwpCell.text,
+          excelRow: ec.row,
+          excelCol: ec.col,
+          excelText: ec.value ?? "",
+          excelAddress: ec.address,
+        },
+      ];
+    });
+    setActiveHwpCell(null);
   };
 
-  // 쌍 삭제
-  const removePair = (idx: number) => setPairs((prev) => prev.filter((_, i) => i !== idx));
 
-  // 텍스트 유사도 자동 매칭
+  // 텍스트 자동 매칭
   const autoMatch = () => {
     const newPairs: Pair[] = [...pairs];
     const usedExcel = new Set(pairs.map((p) => `${p.excelRow}:${p.excelCol}`));
-    const usedHwp = new Set(pairs.map((p) => p.hwpCol));
+    const usedHwp = new Set(pairs.map((p) => `${p.hwpRow}:${p.hwpCol}`));
 
     for (const matchType of ["exact", "partial"] as const) {
       for (const hc of hwpHeaders) {
-        if (usedHwp.has(hc.col) || !hc.text.trim()) continue;
+        const hwpKey = `${hc.row}:${hc.col}`;
+        if (usedHwp.has(hwpKey) || !hc.text.trim()) continue;
         const hwpNorm = normalize(hc.text);
 
         for (const ec of excelHeaders) {
-          const key = `${ec.row}:${ec.col}`;
-          if (usedExcel.has(key)) continue;
+          const excelKey = `${ec.row}:${ec.col}`;
+          if (usedExcel.has(excelKey)) continue;
           const excelNorm = normalize(ec.value ?? "");
 
           const hit =
@@ -104,6 +103,7 @@ export function AutoMappingDialog({
 
           if (hit) {
             newPairs.push({
+              hwpRow: hc.row,
               hwpCol: hc.col,
               hwpText: hc.text,
               excelRow: ec.row,
@@ -111,8 +111,8 @@ export function AutoMappingDialog({
               excelText: ec.value ?? "",
               excelAddress: ec.address,
             });
-            usedHwp.add(hc.col);
-            usedExcel.add(key);
+            usedHwp.add(hwpKey);
+            usedExcel.add(excelKey);
             break;
           }
         }
@@ -124,7 +124,7 @@ export function AutoMappingDialog({
   const handleApply = () => {
     const mappings: CellMapping[] = pairs.map((p) => ({
       hwp_table_idx: selHwpTable,
-      hwp_row: 0,
+      hwp_row: p.hwpRow,   // 실제 행 사용
       hwp_col: p.hwpCol,
       excel_sheet: selExcelSheet,
       excel_row: p.excelRow,
@@ -133,14 +133,63 @@ export function AutoMappingDialog({
     onApply(mappings);
   };
 
-  // 설정이 바뀌면 쌍 초기화
-  const changeTable = (idx: number) => { setSelHwpTable(idx); setPairs([]); setActiveHwpCol(null); };
-  const changeSheet = (idx: number) => { setSelExcelSheet(idx); setPairs([]); setActiveHwpCol(null); };
-  const changeHeaders = (n: number) => { setHeaderRows(n); setPairs([]); setActiveHwpCol(null); };
+  const changeTable  = (idx: number) => { setSelHwpTable(idx); setHwpHeaderRows([0]); setPairs([]); setActiveHwpCell(null); };
+  const changeSheet  = (idx: number) => { setSelExcelSheet(idx); setHeaderRows([0]); setPairs([]); setActiveHwpCell(null); };
+
+  // 행 토글: 이미 선택돼 있으면 해제 (최소 1개 유지), 없으면 추가
+  const toggleHwpRow = (rowIdx: number) => {
+    setHwpHeaderRows(prev => {
+      if (prev.includes(rowIdx)) {
+        if (prev.length === 1) return prev;
+        return prev.filter(r => r !== rowIdx).sort((a, b) => a - b);
+      }
+      return [...prev, rowIdx].sort((a, b) => a - b);
+    });
+    setPairs([]);
+    setActiveHwpCell(null);
+  };
+  const toggleExcelRow = (rowIdx: number) => {
+    setHeaderRows(prev => {
+      if (prev.includes(rowIdx)) {
+        if (prev.length === 1) return prev;
+        return prev.filter(r => r !== rowIdx).sort((a, b) => a - b);
+      }
+      return [...prev, rowIdx].sort((a, b) => a - b);
+    });
+    setPairs([]);
+    setActiveHwpCell(null);
+  };
+
+  const isHwpActive = (row: number, col: number) =>
+    activeHwpCell?.row === row && activeHwpCell?.col === col;
+
+  // SVG 화살표 계산
+  const panelsRef = useRef<HTMLDivElement>(null);
+  const [arrows, setArrows] = useState<Array<{ d: string; color: string; idx: number }>>([]);
+
+  useLayoutEffect(() => {
+    if (!panelsRef.current || pairs.length === 0) { setArrows([]); return; }
+    const container = panelsRef.current;
+    const cr = container.getBoundingClientRect();
+    const newArrows = pairs.flatMap((p, i) => {
+      const hwpEl = container.querySelector<HTMLElement>(`[data-hwp-key="${p.hwpRow}:${p.hwpCol}"]`);
+      const excelEl = container.querySelector<HTMLElement>(`[data-excel-key="${p.excelRow}:${p.excelCol}"]`);
+      if (!hwpEl || !excelEl) return [];
+      const hr = hwpEl.getBoundingClientRect();
+      const er = excelEl.getBoundingClientRect();
+      const x1 = hr.left + hr.width / 2 - cr.left;
+      const y1 = hr.bottom - cr.top;
+      const x2 = er.left + er.width / 2 - cr.left;
+      const y2 = er.top - cr.top;
+      const my = (y1 + y2) / 2;
+      return [{ d: `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`, color: mappingColor(i).badge, idx: i }];
+    });
+    setArrows(newArrows);
+  }, [pairs, hwpHeaderRows, headerRows, selHwpTable, selExcelSheet]);
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-[640px] max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-[860px] max-h-[90vh] flex flex-col">
 
         {/* 헤더 */}
         <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-100 shrink-0">
@@ -152,8 +201,8 @@ export function AutoMappingDialog({
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {/* ── 소스 설정 ── */}
-          <div className="px-5 pt-4 pb-3 border-b border-gray-100 flex items-end gap-3 flex-wrap">
+          {/* ── 소스 설정 (한글 표 + 헤더 행 수만) ── */}
+          <div className="px-5 pt-4 pb-3 border-b border-gray-100 flex items-end gap-3">
             {/* HWP 표 */}
             <div className="flex-1 min-w-[140px]">
               <label className="text-[10px] text-gray-500 mb-1 block font-medium uppercase tracking-wide">한글 표</label>
@@ -171,194 +220,227 @@ export function AutoMappingDialog({
               </div>
             </div>
 
-            {/* 엑셀 시트 */}
-            <div className="flex-1 min-w-[140px]">
-              <label className="text-[10px] text-gray-500 mb-1 block font-medium uppercase tracking-wide">엑셀 시트</label>
-              <div className="relative">
-                <select
-                  value={selExcelSheet}
-                  onChange={(e) => changeSheet(Number(e.target.value))}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 pr-7 bg-white appearance-none focus:outline-none focus:border-green-400"
-                >
-                  {template.sheets.map((s, i) => (
-                    <option key={i} value={i}>{i + 1}. {s.name}</option>
-                  ))}
-                </select>
-                <ChevronDown size={11} className="absolute right-2 top-2 text-gray-400 pointer-events-none" />
-              </div>
-            </div>
-
-            {/* 헤더 행 수 */}
+            {/* HWP 헤더 행 선택 (토글) */}
             <div>
-              <label className="text-[10px] text-gray-500 mb-1 block font-medium uppercase tracking-wide">엑셀 헤더 행</label>
+              <label className="text-[10px] text-gray-500 mb-1 block font-medium uppercase tracking-wide">한글 헤더 행</label>
               <div className="flex gap-1">
-                {[1, 2, 3, 4].map((n) => (
-                  <button
-                    key={n}
-                    onClick={() => changeHeaders(n)}
+                {[0, 1, 2].map((rowIdx) => (
+                  <button key={rowIdx}
+                    onClick={() => toggleHwpRow(rowIdx)}
                     className={`w-8 h-7 text-xs rounded border font-medium transition-colors ${
-                      headerRows === n
-                        ? "bg-green-500 text-white border-green-500"
-                        : "bg-white text-gray-600 border-gray-200 hover:border-green-400"
+                      hwpHeaderRows.includes(rowIdx)
+                        ? "bg-blue-500 text-white border-blue-500"
+                        : "bg-white text-gray-600 border-gray-200 hover:border-blue-400"
                     }`}
-                  >
-                    {n}
-                  </button>
+                  >{rowIdx + 1}</button>
                 ))}
               </div>
             </div>
-
-            {/* 자동 매칭 버튼 */}
-            <button
-              onClick={autoMatch}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100 font-medium shrink-0"
-            >
-              <Zap size={11} /> 텍스트 자동매칭
-            </button>
           </div>
 
-          {/* ── 헤더 선택 패널 ── */}
-          <div className="grid grid-cols-2 gap-0 border-b border-gray-100">
-            {/* 왼쪽: HWP 헤더 */}
-            <div className="border-r border-gray-100 p-4">
+          {/* ── 헤더 선택 패널 (위: 한글 / 아래: 엑셀) ── */}
+          <div className="flex flex-col border-b border-gray-100 relative" ref={panelsRef}>
+            {/* SVG 화살표 오버레이 */}
+            {arrows.length > 0 && (
+              <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" style={{ overflow: "visible" }}>
+                <defs>
+                  {arrows.map(a => (
+                    <marker key={a.idx} id={`arrow-${a.idx}`} markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                      <path d="M0,0 L0,6 L8,3 z" fill={a.color} opacity="0.7" />
+                    </marker>
+                  ))}
+                </defs>
+                {arrows.map(a => (
+                  <path key={a.idx} d={a.d}
+                    stroke={a.color} strokeWidth="2" fill="none"
+                    opacity="0.55" strokeDasharray="5,3"
+                    markerEnd={`url(#arrow-${a.idx})`}
+                  />
+                ))}
+              </svg>
+            )}
+
+            {/* 위: HWP 헤더 그리드 */}
+            <div className="p-3 border-b border-gray-100">
               <p className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide mb-2">
-                한글 헤더 셀 선택
+                한글 헤더
+                <span className="ml-1 normal-case font-normal text-gray-400">— 셀 클릭해서 선택</span>
               </p>
               {hwpHeaders.length === 0 ? (
-                <p className="text-xs text-gray-400">헤더 셀이 없습니다</p>
-              ) : (
-                <div className="flex flex-col gap-1">
-                  {hwpHeaders.map((hc) => {
-                    const isPaired = pairedHwpCols.has(hc.col);
-                    const isActive = activeHwpCol === hc.col;
-                    return (
-                      <button
-                        key={hc.col}
-                        onClick={() => !isPaired && setActiveHwpCol(isActive ? null : hc.col)}
-                        disabled={isPaired}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left text-xs transition-all ${
-                          isPaired
-                            ? "bg-gray-50 text-gray-300 cursor-default line-through"
-                            : isActive
-                            ? "bg-blue-500 text-white shadow-sm"
-                            : "bg-blue-50 text-blue-800 hover:bg-blue-100 cursor-pointer"
-                        }`}
-                      >
-                        <span className="text-[10px] opacity-60 shrink-0">열{hc.col + 1}</span>
-                        <span className="font-medium truncate">{hc.text || "(빈 셀)"}</span>
-                        {isPaired && <span className="ml-auto text-[10px]">✓</span>}
-                        {isActive && <span className="ml-auto text-[10px] animate-pulse">→ 선택 중</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* 오른쪽: 엑셀 헤더 */}
-            <div className="p-4">
-              <p className="text-[10px] font-semibold text-green-600 uppercase tracking-wide mb-2">
-                엑셀 헤더 셀 선택{activeHwpCol !== null && (
-                  <span className="ml-1 text-blue-500 normal-case">
-                    — 클릭하면 짝이 맞춰집니다
-                  </span>
-                )}
-              </p>
-              {excelHeaders.length === 0 ? (
-                <p className="text-xs text-gray-400">헤더 영역에 셀이 없습니다 (헤더 행 수를 늘려보세요)</p>
-              ) : (
-                <div className="flex flex-col gap-1">
-                  {excelHeaders.map((ec) => {
-                    const key = `${ec.row}:${ec.col}`;
-                    const isPaired = pairedExcelKeys.has(key);
-                    const canClick = activeHwpCol !== null && !isPaired;
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => handleExcelClick(ec)}
-                        disabled={isPaired}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left text-xs transition-all ${
-                          isPaired
-                            ? "bg-gray-50 text-gray-300 cursor-default line-through"
-                            : canClick
-                            ? "bg-green-50 text-green-800 hover:bg-green-500 hover:text-white cursor-pointer ring-1 ring-green-300"
-                            : "bg-green-50 text-green-800 cursor-default opacity-60"
-                        }`}
-                      >
-                        <span className="text-[10px] opacity-60 shrink-0">{ec.address}</span>
-                        <span className="font-medium truncate">{ec.value || "(빈 셀)"}</span>
-                        {isPaired && <span className="ml-auto text-[10px]">✓</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ── 확정된 쌍 목록 ── */}
-          <div className="px-5 py-4">
-            <div className="flex items-center gap-2 mb-2">
-              <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">확정된 쌍</p>
-              <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full font-medium">
-                {pairs.length}개
-              </span>
-              {pairs.length > 0 && (
-                <button
-                  onClick={() => setPairs([])}
-                  className="ml-auto text-[10px] text-gray-400 hover:text-red-500"
-                >
-                  전체 삭제
-                </button>
-              )}
-            </div>
-
-            {pairs.length === 0 ? (
-              <div className="bg-gray-50 rounded-lg py-5 text-center">
-                <p className="text-xs text-gray-400">
-                  왼쪽에서 한글 헤더를 선택하고,<br />오른쪽에서 엑셀 헤더를 클릭해 쌍을 만드세요
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {pairs.map((p, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-3 px-3 py-2 bg-purple-50 border border-purple-100 rounded-lg"
-                  >
-                    <span className="text-[10px] text-gray-400 shrink-0">#{i + 1}</span>
-                    <div className="flex flex-col min-w-0 flex-1">
-                      <span className="text-[10px] text-gray-400">열{p.hwpCol + 1}</span>
-                      <span className="text-xs font-semibold text-blue-700 truncate">{p.hwpText}</span>
-                    </div>
-                    <span className="text-gray-300 shrink-0">→</span>
-                    <div className="flex flex-col min-w-0 flex-1">
-                      <span className="text-[10px] text-gray-400">{p.excelAddress}</span>
-                      <span className="text-xs font-semibold text-green-700 truncate">{p.excelText}</span>
-                    </div>
-                    <button
-                      onClick={() => removePair(i)}
-                      className="text-gray-300 hover:text-red-400 shrink-0 ml-1"
-                    >
-                      <X size={13} />
-                    </button>
+                <p className="text-xs text-gray-400">헤더 셀 없음</p>
+              ) : (() => {
+                const covered = new Set<string>();
+                for (const c of hwpHeaders) {
+                  for (let r = c.row; r < c.row + c.row_span; r++)
+                    for (let cl = c.col; cl < c.col + c.col_span; cl++)
+                      if (r !== c.row || cl !== c.col) covered.add(`${r}:${cl}`);
+                }
+                const totalCols = table?.total_cols ?? 1;
+                return (
+                  <div className="overflow-x-auto">
+                    <table className="border-collapse">
+                      <tbody>
+                        {hwpHeaderRows.map((rowIdx) => (
+                          <tr key={rowIdx}>
+                            {Array.from({ length: totalCols }, (_, colIdx) => {
+                              if (covered.has(`${rowIdx}:${colIdx}`)) return null;
+                              const cell = hwpHeaders.find(c => c.row === rowIdx && c.col === colIdx);
+                              if (!cell) return <td key={colIdx} className="border border-gray-200 px-3 py-1.5 min-w-[60px]" />;
+                              const key = `${cell.row}:${cell.col}`;
+                              const isPaired = pairedHwpKeys.has(key);
+                              const isActive = isHwpActive(cell.row, cell.col);
+                              return (
+                                <td key={colIdx}
+                                  colSpan={cell.col_span > 1 ? cell.col_span : undefined}
+                                  rowSpan={cell.row_span > 1 ? cell.row_span : undefined}
+                                  data-hwp-key={`${cell.row}:${cell.col}`}
+                                  onClick={() => !isPaired && setActiveHwpCell(isActive ? null : { row: cell.row, col: cell.col })}
+                                  className={`border text-xs px-3 py-1.5 text-center select-none transition-all min-w-[60px] ${
+                                    isPaired
+                                      ? "border-gray-200 bg-gray-50 text-gray-300 line-through cursor-default"
+                                      : isActive
+                                      ? "border-blue-400 bg-blue-500 text-white font-semibold cursor-pointer"
+                                      : "border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-200 cursor-pointer"
+                                  }`}
+                                >
+                                  {cell.text || "　"}
+                                  {isPaired && <span className="ml-1 text-[9px]">✓</span>}
+                                  {isActive && <span className="ml-1 text-[9px] opacity-80">▶</span>}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                ))}
+                );
+              })()}
+            </div>
+
+            {/* 가운데: 자동 매칭 버튼 */}
+            <div className="flex items-center justify-center py-3 border-b border-gray-100 bg-purple-50/50">
+              <button
+                onClick={autoMatch}
+                className="flex items-center gap-3 px-6 py-2.5 rounded-xl bg-purple-600 text-white hover:bg-purple-700 active:scale-95 transition-all shadow-md shadow-purple-200"
+              >
+                <Zap size={20} className="fill-yellow-300 stroke-white" />
+                <span className="text-sm font-bold tracking-wide">텍스트 자동매칭</span>
+                <Zap size={20} className="fill-yellow-300 stroke-white scale-x-[-1]" />
+              </button>
+            </div>
+
+            {/* 아래: 엑셀 헤더 그리드 */}
+            <div className="p-3">
+              <p className="text-[10px] font-semibold text-green-600 uppercase tracking-wide mb-2">
+                엑셀 헤더
+                {activeHwpCell
+                  ? <span className="ml-1 text-blue-500 normal-case font-normal">— 짝지을 셀 클릭</span>
+                  : <span className="ml-1 normal-case font-normal text-gray-400">— 한글 선택 후 클릭</span>
+                }
+              </p>
+              {(() => {
+                const allExcelHeaderCells = sheet?.cells.filter(c => headerRows.includes(c.row)) ?? [];
+                if (allExcelHeaderCells.length === 0)
+                  return <p className="text-xs text-gray-400">헤더 셀 없음 (행 수 늘려보세요)</p>;
+                const covered = new Set<string>();
+                for (const c of allExcelHeaderCells) {
+                  for (let r = c.row; r < c.row + c.merge_rows; r++)
+                    for (let cl = c.col; cl < c.col + c.merge_cols; cl++)
+                      if (r !== c.row || cl !== c.col) covered.add(`${r}:${cl}`);
+                }
+                const totalCols = sheet?.max_col ?? 1;
+                return (
+                  <div className="overflow-x-auto">
+                    <table className="border-collapse">
+                      <tbody>
+                        {headerRows.map((rowIdx) => (
+                          <tr key={rowIdx}>
+                            {Array.from({ length: totalCols }, (_, colIdx) => {
+                              if (covered.has(`${rowIdx}:${colIdx}`)) return null;
+                              const cell = allExcelHeaderCells.find(c => c.row === rowIdx && c.col === colIdx);
+                              if (!cell) return <td key={colIdx} className="border border-gray-200 px-3 py-1.5 min-w-[60px]" />;
+                              const key = `${cell.row}:${cell.col}`;
+                              const isPaired = pairedExcelKeys.has(key);
+                              const canReplace = !!activeHwpCell && isPaired;
+                              const hasText = (cell.value ?? "").trim().length > 0;
+                              return (
+                                <td key={colIdx}
+                                  colSpan={cell.merge_cols > 1 ? cell.merge_cols : undefined}
+                                  rowSpan={cell.merge_rows > 1 ? cell.merge_rows : undefined}
+                                  data-excel-key={`${cell.row}:${cell.col}`}
+                                  onClick={() => hasText && handleExcelClick(cell)}
+                                  className={`border text-xs px-3 py-1.5 text-center select-none transition-all min-w-[60px] ${
+                                    !hasText
+                                      ? "border-gray-100 bg-white text-gray-200 cursor-default"
+                                      : canReplace
+                                      ? "border-orange-300 bg-orange-50 text-orange-800 hover:bg-orange-400 hover:text-white cursor-pointer"
+                                      : isPaired
+                                      ? "border-gray-200 bg-gray-50 text-gray-300 line-through cursor-default"
+                                      : activeHwpCell
+                                      ? "border-green-300 bg-green-50 text-green-800 hover:bg-green-400 hover:text-white cursor-pointer"
+                                      : "border-green-200 bg-green-50 text-green-700 cursor-default opacity-70"
+                                  }`}
+                                >
+                                  {cell.value || "　"}
+                                  {isPaired && !canReplace && <span className="ml-1 text-[9px] text-gray-400">✓</span>}
+                                  {canReplace && <span className="ml-1 text-[9px] text-orange-500 font-bold">교체</span>}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+
+              {/* 엑셀 시트 + 헤더 행 수 (그리드 아래) */}
+              <div className="flex items-end gap-3 mt-3 pt-3 border-t border-gray-100">
+                <div className="flex-1 min-w-[140px]">
+                  <label className="text-[10px] text-gray-500 mb-1 block font-medium uppercase tracking-wide">엑셀 시트</label>
+                  <div className="relative">
+                    <select
+                      value={selExcelSheet}
+                      onChange={(e) => changeSheet(Number(e.target.value))}
+                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 pr-7 bg-white appearance-none focus:outline-none focus:border-green-400"
+                    >
+                      {template.sheets.map((s, i) => (
+                        <option key={i} value={i}>{i + 1}. {s.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={11} className="absolute right-2 top-2 text-gray-400 pointer-events-none" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 mb-1 block font-medium uppercase tracking-wide">엑셀 헤더 행</label>
+                  <div className="flex gap-1">
+                    {[0, 1, 2, 3].map((rowIdx) => (
+                      <button key={rowIdx}
+                        onClick={() => toggleExcelRow(rowIdx)}
+                        className={`w-8 h-7 text-xs rounded border font-medium transition-colors ${
+                          headerRows.includes(rowIdx)
+                            ? "bg-green-500 text-white border-green-500"
+                            : "bg-white text-gray-600 border-gray-200 hover:border-green-400"
+                        }`}
+                      >{rowIdx + 1}</button>
+                    ))}
+                  </div>
+                </div>
               </div>
-            )}
+            </div>
           </div>
+
         </div>
 
         {/* 푸터 */}
         <div className="flex items-center gap-3 px-5 py-3 border-t border-gray-100 shrink-0">
           <span className="text-xs text-gray-400">
-            {pairs.length}개 쌍 → 클릭으로 직접 추가, 또는 텍스트 자동매칭 사용
+            {pairs.length > 0 ? `${pairs.length}개 매핑됨` : "한글 셀 선택 → 엑셀 셀 클릭으로 매핑"}
           </span>
           <div className="flex-1" />
-          <button
-            onClick={onClose}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
-          >
+          <button onClick={onClose} className="flex items-center gap-1 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
             <X size={12} /> 닫기
           </button>
           <button
