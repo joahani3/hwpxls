@@ -1,0 +1,45 @@
+[package]
+name = "hwpxls"
+version = "0.1.0"
+description = "한글 표 → 엑셀 변환기"
+authors = ["joahani@gmail.com"]
+edition = "2021"
+default-run = "hwpxls"
+
+[lib]
+name = "hwpxls_lib"
+crate-type = ["lib"]
+
+[build-dependencies]
+tauri-build = { version = "^2.5", features = [] }
+
+[dependencies]
+tauri = { version = "^2.10", features = ["image-png"] }
+tauri-plugin-dialog = "^2.6"
+tauri-plugin-shell = "^2.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# HWPX 파싱 (ZIP + XML)
+zip = { version = "8", default-features = false, features = ["deflate"] }
+quick-xml = "0.41"
+
+# Excel 읽기/쓰기
+calamine = { version = "0.36", features = ["dates"] }
+rust_xlsxwriter = "0.80"
+
+# 유틸
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tempfile = "3"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+panic = "unwind"
+codegen-units = 4
+lto = "thin"
+opt-level = 3

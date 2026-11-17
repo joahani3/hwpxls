@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+target/
+src-tauri/target/
+*.pdb
+*.dll
+*.exe
+!src-tauri/binaries/
+.DS_Store
+Thumbs.db
+*.log
+test-data/

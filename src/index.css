@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --border: #e2e8f0;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --selected-hwp: #dbeafe;
+  --selected-excel: #dcfce7;
+  --mapped: #fef9c3;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Pretendard', 'Malgun Gothic', system-ui, sans-serif;
+  font-size: 14px;
+  user-select: none;
+}
+
+.cell-grid {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+
+.cell-grid td, .cell-grid th {
+  border: 1px solid var(--border);
+  padding: 4px 6px;
+  min-width: 60px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.cell-grid td:hover {
+  background: #f1f5f9;
+}
+
+.cell-grid td.selected-hwp {
+  background: var(--selected-hwp);
+  outline: 2px solid var(--accent);
+}
+
+.cell-grid td.selected-excel {
+  background: var(--selected-excel);
+  outline: 2px solid #16a34a;
+}
+
+.cell-grid td.mapped {
+  background: var(--mapped);
+}
+
+/* 미리보기 전용 */
+.cell-grid td.preview-filled {
+  background: #d1fae5;
+  color: #065f46;
+  font-weight: 600;
+  outline: 1.5px solid #34d399;
+}
+
+.cell-grid td.preview-empty-mapped {
+  background: #fffbeb;
+  outline: 1.5px dashed #fbbf24;
+}
+
+.cell-grid .col-header {
+  background: #f1f5f9;
+  font-weight: 600;
+  text-align: center;
+  cursor: default;
+  color: var(--text-muted);
+}
+
+.cell-grid .row-header {
+  background: #f1f5f9;
+  font-weight: 600;
+  text-align: center;
+  cursor: default;
+  color: var(--text-muted);
+  min-width: 32px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }

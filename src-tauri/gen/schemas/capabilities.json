@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"hwpxls 기본 권한","local":true,"windows":["main"],"permissions":["core:default","dialog:allow-save","dialog:allow-open","shell:allow-open"]}}
