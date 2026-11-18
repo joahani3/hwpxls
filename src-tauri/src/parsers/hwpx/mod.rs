@@ -1,4 +1,5 @@
 pub mod table;
+pub mod html;
 
 use std::collections::BTreeMap;
 use std::fs::File;

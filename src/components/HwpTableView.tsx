@@ -1,3 +1,4 @@
+import React from "react";
 import { FileText } from "lucide-react";
 import { HwpTable, HwpCell, CellMapping, SelectedHwpCell } from "../types";
 import { mappingColor } from "../mappingColors";
@@ -10,10 +11,11 @@ interface Props {
   onCellClick: (tableIdx: number, row: number, col: number) => void;
   mappings: CellMapping[];
   onOpen?: () => void;
+  scrollRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 export function HwpTableView({
-  tables, activeTableIdx, onTableChange, selectedCell, onCellClick, mappings, onOpen,
+  tables, activeTableIdx, onTableChange, selectedCell, onCellClick, mappings, onOpen, scrollRef,
 }: Props) {
   const table = tables[activeTableIdx];
 
@@ -56,20 +58,28 @@ export function HwpTableView({
 
   return (
     <div className="flex flex-col h-full">
-      {tables.length > 1 && (
-        <div className="flex gap-1 p-2 border-b border-gray-200 overflow-x-auto shrink-0">
+      {tables.length > 0 && (
+        <div className="flex gap-0 border-b-2 border-blue-200 overflow-x-auto shrink-0 bg-blue-50/40">
           {tables.map((t, i) => (
             <button key={i} onClick={() => onTableChange(i)}
-              className={`px-3 py-1 rounded text-xs whitespace-nowrap transition-colors ${
-                i === activeTableIdx ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              className={`relative px-4 py-2 text-xs font-semibold whitespace-nowrap transition-all border-b-2 -mb-[2px] ${
+                i === activeTableIdx
+                  ? "bg-white text-blue-700 border-blue-500 shadow-sm"
+                  : "bg-transparent text-gray-500 border-transparent hover:text-blue-600 hover:bg-white/60"
               }`}>
-              표 {i + 1} ({t.total_rows}×{t.total_cols})
+              <span className={`inline-flex items-center gap-1.5 ${i === activeTableIdx ? "" : ""}`}>
+                <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${
+                  i === activeTableIdx ? "bg-blue-500 text-white" : "bg-gray-200 text-gray-500"
+                }`}>{i + 1}</span>
+                표 {i + 1}
+                <span className="text-[10px] font-normal opacity-70">({t.total_rows}×{t.total_cols})</span>
+              </span>
             </button>
           ))}
         </div>
       )}
 
-      <div className="flex-1 overflow-auto p-2">
+      <div ref={scrollRef} className="flex-1 overflow-auto p-2">
         <table className="cell-grid">
           <thead>
             <tr>

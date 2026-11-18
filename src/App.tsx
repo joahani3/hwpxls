@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
-import { AlertCircle, Bug, Info, FileText, FileSpreadsheet } from "lucide-react";
+import { AlertCircle, Bug, Info, FileText, FileSpreadsheet, ClipboardList } from "lucide-react";
 
 import {
   HwpTable,
@@ -19,6 +19,8 @@ import { MappingPanel } from "./components/MappingPanel";
 import { MergeDialog } from "./components/MergeDialog";
 import { AutoMappingDialog } from "./components/AutoMappingDialog";
 import { ExcelPreviewDialog } from "./components/ExcelPreviewDialog";
+import { ResultCompareDialog } from "./components/ResultCompareDialog";
+import { ExcelViewerDialog } from "./components/ExcelViewerDialog";
 import { InfoDialog } from "./components/InfoDialog";
 
 interface PendingMapping {
@@ -41,7 +43,11 @@ export default function App() {
 
   const [showAutoMapping, setShowAutoMapping] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [showResult, setShowResult] = useState(false);
+  const [resultPath, setResultPath] = useState<string | null>(null);
+  const [resultChangeLog, setResultChangeLog] = useState<ChangeLogEntry[]>([]);
   const [showInfo, setShowInfo] = useState(false);
+  const [viewExcelPath, setViewExcelPath] = useState<string | null>(null);
   // 자동 매핑을 이미 띄운 파일 조합 추적 (같은 조합 중복 팝업 방지)
   const autoMappingShownKey = useRef("");
 
@@ -61,7 +67,10 @@ export default function App() {
       const tables = await invoke<HwpTable[]>("parse_hwpx_tables", { path });
       setHwpTables(tables);
       setHwpPath(path);
-      setActiveHwpTable(0);
+      const richestIdx = tables.reduce((best, t, i) =>
+        t.cells.filter(c => c.text.trim()).length > tables[best].cells.filter(c => c.text.trim()).length ? i : best
+      , 0);
+      setActiveHwpTable(richestIdx);
       setSelectedHwpCell(null);
       setMappings([]);
       setTemplate((tmpl) => {
@@ -313,6 +322,27 @@ export default function App() {
           </button>
         )}
 
+        {resultPath && (
+          <button
+            onClick={() => setShowResult(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-yellow-700 bg-yellow-50 border border-yellow-300 rounded hover:bg-yellow-100 transition-colors"
+            title={resultPath}
+          >
+            <ClipboardList size={13} /> 이전 작업 결과 보기
+          </button>
+        )}
+
+        <button
+          onClick={async () => {
+            const selected = await open({ multiple: false, filters: [{ name: "Excel", extensions: ["xlsx", "xls"] }] });
+            if (selected) setViewExcelPath(selected as string);
+          }}
+          className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-green-700 bg-green-50 border border-green-300 rounded hover:bg-green-100 transition-colors"
+          title="저장된 엑셀 결과 파일 열기"
+        >
+          <FileSpreadsheet size={13} /> 결과파일보기
+        </button>
+
         <button
           onClick={() => setShowInfo(true)}
           className="p-1.5 text-gray-400 hover:text-blue-500 transition-colors"
@@ -414,12 +444,30 @@ export default function App() {
       {showPreview && template && (
         <ExcelPreviewDialog
           hwpTables={hwpTables}
+          hwpPath={hwpPath ?? undefined}
           template={template}
           mappings={mappings}
           loading={loading}
           onExport={exportExcel}
+          onExported={(path, log) => { setResultPath(path); setResultChangeLog(log); setShowPreview(false); setViewExcelPath(path); }}
           onClose={() => setShowPreview(false)}
         />
+      )}
+
+      {/* 변환 결과 비교 뷰 */}
+      {showResult && resultPath && (
+        <ResultCompareDialog
+          hwpTables={hwpTables}
+          mappings={mappings}
+          outputPath={resultPath}
+          changeLog={resultChangeLog}
+          onClose={() => setShowResult(false)}
+        />
+      )}
+
+      {/* 엑셀 결과 파일 뷰어 */}
+      {viewExcelPath && (
+        <ExcelViewerDialog path={viewExcelPath} onClose={() => setViewExcelPath(null)} />
       )}
 
       {/* 앱 정보 다이얼로그 */}
@@ -431,6 +479,7 @@ export default function App() {
           hwpTables={hwpTables}
           template={template}
           existingMappings={mappings}
+          initialHwpTable={activeHwpTable}
           onApply={applyAutoMappings}
           onClose={() => setShowAutoMapping(false)}
         />

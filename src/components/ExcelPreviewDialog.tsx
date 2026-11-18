@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { X, Download, CheckCircle, FolderOpen, FileSpreadsheet, Replace, Eye } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { X, Download, CheckCircle, FolderOpen, FileSpreadsheet, Replace, Eye, Link2, Link2Off } from "lucide-react";
 import { open as openPath } from "@tauri-apps/plugin-shell";
+import { invoke } from "@tauri-apps/api/core";
 import { HwpTable, ExcelTemplate, ExcelCell, CellMapping, CellOverride, ChangeLogEntry as ChangeLogEntryType } from "../types";
 
 interface ChangeLogEntry {
@@ -13,9 +14,11 @@ interface ChangeLogEntry {
 
 interface Props {
   hwpTables: HwpTable[];
+  hwpPath?: string;
   template: ExcelTemplate;
   mappings: CellMapping[];
   onExport: (overrides: CellOverride[], changeLog: ChangeLogEntryType[]) => Promise<string | null>;
+  onExported?: (path: string, changeLog: ChangeLogEntryType[]) => void;
   onClose: () => void;
   loading?: boolean;
 }
@@ -33,13 +36,62 @@ function colLetter(col: number): string {
 
 function colLetter2(col: number): string { return colLetter(col); }
 
-export function ExcelPreviewDialog({ hwpTables, template, mappings, onExport, onClose, loading }: Props) {
+export function ExcelPreviewDialog({ hwpTables, hwpPath, template, mappings, onExport, onExported, onClose, loading }: Props) {
   const [activeSheet, setActiveSheet] = useState(0);
   const [savedPath, setSavedPath] = useState<string | null>(null);
+  const [showHwpSide, setShowHwpSide] = useState(true);
+  const [hwpPreviewHtml, setHwpPreviewHtml] = useState<string | null>(null);
+  const [hwpPreviewError, setHwpPreviewError] = useState<string | null>(null);
+  const [scrollSynced, setScrollSynced] = useState(true);
+
+  const hwpScrollRef = useRef<HTMLDivElement>(null);
+  const excelScrollRef = useRef<HTMLDivElement>(null);
+
+  // HWPX → HTML 로드
+  useEffect(() => {
+    if (!showHwpSide || !hwpPath) return;
+    if (hwpPreviewHtml) return;
+    invoke<string>("get_hwpx_preview_html", { path: hwpPath })
+      .then(setHwpPreviewHtml)
+      .catch(e => setHwpPreviewError(String(e)));
+  }, [showHwpSide, hwpPath, hwpPreviewHtml]);
+
+  // 비율 기반 좌우 연동 스크롤
+  useEffect(() => {
+    const hwp = hwpScrollRef.current;
+    const excel = excelScrollRef.current;
+    if (!hwp || !excel || !scrollSynced || !showHwpSide) return;
+    let busy = false;
+    const fromHwp = () => {
+      if (busy) return; busy = true;
+      const hwpMax = hwp.scrollHeight - hwp.clientHeight;
+      const ratio = hwpMax > 0 ? hwp.scrollTop / hwpMax : 0;
+      excel.scrollTop = ratio * (excel.scrollHeight - excel.clientHeight);
+      busy = false;
+    };
+    const fromExcel = () => {
+      if (busy) return; busy = true;
+      const excelMax = excel.scrollHeight - excel.clientHeight;
+      const ratio = excelMax > 0 ? excel.scrollTop / excelMax : 0;
+      hwp.scrollTop = ratio * (hwp.scrollHeight - hwp.clientHeight);
+      busy = false;
+    };
+    hwp.addEventListener("scroll", fromHwp);
+    excel.addEventListener("scroll", fromExcel);
+    return () => {
+      hwp.removeEventListener("scroll", fromHwp);
+      excel.removeEventListener("scroll", fromExcel);
+    };
+  }, [scrollSynced, showHwpSide, hwpPreviewHtml]);
 
   // 찾기/바꾸기
   const [showFindReplace, setShowFindReplace] = useState(false);
   const [targetCol, setTargetCol] = useState<number>(-1); // -1 = 전체
+  const [hoverCol, setHoverCol] = useState<number>(-1);
+  const [frPopup, setFrPopup] = useState(false);
+  const [stepMode, setStepMode] = useState(false);
+  const [stepMatches, setStepMatches] = useState<Array<{ row: number; col: number; original: string }>>([]);
+  const [stepIdx, setStepIdx] = useState(0);
   const [findStr, setFindStr] = useState("");
   const [replaceStr, setReplaceStr] = useState("");
   const [overrides, setOverrides] = useState<Map<string, CellOverride>>(new Map());
@@ -56,7 +108,7 @@ export function ExcelPreviewDialog({ hwpTables, template, mappings, onExport, on
       replaced: e.replaced,
     }));
     const path = await onExport(Array.from(overrides.values()), rustLog);
-    if (path) setSavedPath(path);
+    if (path) { setSavedPath(path); onExported?.(path, rustLog); }
   };
 
   // 파일 열기 (기본 앱 = Excel)
@@ -138,6 +190,49 @@ export function ExcelPreviewDialog({ hwpTables, template, mappings, onExport, on
     setReplaceStr("");
   };
 
+  const startStepMode = () => {
+    if (!findStr.trim()) return;
+    const matches: Array<{ row: number; col: number; original: string }> = [];
+    for (const [key, original] of valueMap.entries()) {
+      const [sStr, rStr, cStr] = key.split(":");
+      const s = Number(sStr), r = Number(rStr), c = Number(cStr);
+      if (s !== activeSheet) continue;
+      if (targetCol !== -1 && c !== targetCol) continue;
+      if (!original.includes(findStr)) continue;
+      matches.push({ row: r, col: c, original });
+    }
+    matches.sort((a, b) => a.row - b.row || a.col - b.col);
+    setStepMatches(matches);
+    setStepIdx(0);
+    setStepMode(true);
+  };
+
+  const applyStepOne = () => {
+    if (!stepMatches.length) return;
+    const { row, col, original } = stepMatches[stepIdx];
+    const replaced = original.split(findStr).join(replaceStr);
+    const key = `${activeSheet}:${row}:${col}`;
+    const newOverrides = new Map(overrides);
+    newOverrides.set(key, { excel_sheet: activeSheet, excel_row: row, excel_col: col, value: replaced });
+    const newLog = [...changeLog];
+    const idx = newLog.findIndex(e => e.sheet === activeSheet && e.row === row && e.col === col);
+    if (idx >= 0) newLog[idx].replaced = replaced;
+    else newLog.push({ sheet: activeSheet, row, col, original, replaced });
+    setOverrides(newOverrides);
+    setChangeLog(newLog);
+    // 업데이트된 matches에서 해당 항목 제거
+    const next = stepMatches.filter((_, i) => i !== stepIdx);
+    setStepMatches(next);
+    setStepIdx(i => Math.min(i, next.length - 1));
+    if (next.length === 0) { setStepMode(false); setFindStr(""); setReplaceStr(""); }
+  };
+
+  const skipStepOne = () => {
+    if (!stepMatches.length) return;
+    const next = (stepIdx + 1) % stepMatches.length;
+    setStepIdx(next);
+  };
+
   // 셀 맵
   const cellMap = new Map<string, ExcelCell>();
   for (const cell of sheet.cells) {
@@ -176,8 +271,54 @@ export function ExcelPreviewDialog({ hwpTables, template, mappings, onExport, on
   const mappedCount = mappings.filter((m) => m.excel_sheet === activeSheet).length;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-8">
-      <div className="bg-white rounded-2xl shadow-2xl flex flex-col w-full max-w-5xl max-h-[90vh]">
+    <div className={showHwpSide
+      ? "fixed inset-0 z-50 flex"
+      : "fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-8"
+    }>
+      {/* 한글 원본 패널 */}
+      {showHwpSide && (
+        <div className="flex flex-col w-1/2 bg-white border-r border-gray-200 min-h-0 h-full">
+          <div className="flex-1 min-h-0 overflow-hidden bg-white relative">
+            {hwpPreviewError && <div className="p-4 text-xs text-red-500">{hwpPreviewError}</div>}
+            {!hwpPreviewHtml && !hwpPreviewError && (
+              <div className="flex items-center justify-center h-full text-xs text-gray-400">불러오는 중...</div>
+            )}
+            {hwpPreviewHtml && (
+              <div
+                ref={hwpScrollRef}
+                className="w-full h-full overflow-auto"
+                dangerouslySetInnerHTML={{ __html: hwpPreviewHtml }}
+              />
+            )}
+            {/* 스크롤바 왼쪽 오버레이 버튼 */}
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-1.5 z-10">
+              <button
+                onClick={() => setScrollSynced(v => !v)}
+                title="좌우 연동 스크롤"
+                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold shadow transition-colors ${
+                  scrollSynced
+                    ? "bg-blue-500 text-white"
+                    : "bg-white/90 text-gray-400 border border-gray-300 hover:border-blue-300"
+                }`}
+              >
+                {scrollSynced ? <Link2 size={10} /> : <Link2Off size={10} />}
+                연동스크롤
+              </button>
+              <button
+                onClick={() => setShowHwpSide(false)}
+                className="px-2 py-1 rounded text-[10px] font-semibold shadow bg-white/90 text-gray-500 border border-gray-300 hover:bg-red-50 hover:border-red-300 hover:text-red-600 transition-colors"
+              >
+                원본닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className={showHwpSide
+        ? "flex flex-col w-1/2 bg-white h-full overflow-hidden"
+        : "bg-white rounded-2xl shadow-2xl flex flex-col w-full max-w-5xl max-h-[90vh]"
+      }>
 
         {/* 헤더 */}
         <div className="flex items-center gap-3 px-8 py-5 border-b border-gray-100 shrink-0">
@@ -197,90 +338,134 @@ export function ExcelPreviewDialog({ hwpTables, template, mappings, onExport, on
               <CheckCircle size={11} /> 저장 완료
             </span>
           )}
-          {changeLog.length > 0 && (
+          {/* 버튼 그룹 */}
+          <div className="ml-auto flex items-center gap-1">
+
+            {/* 원본함께 보기 토글 */}
+            {hwpTables.length > 0 && (
+              <button
+                onClick={() => setShowHwpSide(v => !v)}
+                title="원본함께 보기"
+                className={`flex flex-col items-center gap-0.5 px-4 py-2 rounded-xl border-2 transition-colors ${
+                  showHwpSide
+                    ? "bg-blue-50 border-blue-400 text-blue-700"
+                    : "border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-500"
+                }`}
+              >
+                <Link2 size={20} />
+                <span className="text-[9px] font-semibold tracking-wide">원본함께</span>
+              </button>
+            )}
+
+            {/* 원본보기 (변경사항 있을 때) */}
+            {changeLog.length > 0 && (
+              <button
+                onClick={() => setShowOriginal(v => !v)}
+                title="원본보기"
+                className={`flex flex-col items-center gap-0.5 px-4 py-2 rounded-xl border-2 transition-colors ${
+                  showOriginal
+                    ? "bg-pink-50 border-pink-400 text-pink-700"
+                    : "border-gray-200 text-gray-400 hover:border-pink-300 hover:text-pink-500"
+                }`}
+              >
+                <Eye size={20} />
+                <span className="text-[9px] font-semibold tracking-wide">원본보기</span>
+              </button>
+            )}
+
+            {/* 찾기/바꾸기 */}
             <button
-              onClick={() => setShowOriginal(v => !v)}
-              title="원본보기"
-              className={`ml-auto flex flex-col items-center gap-0.5 px-4 py-2 rounded-xl border-2 transition-colors ${
-                showOriginal
-                  ? "bg-pink-50 border-pink-400 text-pink-700"
-                  : "border-gray-200 text-gray-400 hover:border-pink-300 hover:text-pink-500"
+              onClick={() => setShowFindReplace(v => !v)}
+              title="찾기/바꾸기"
+              className={`flex flex-col items-center gap-0.5 px-4 py-2 rounded-xl border-2 transition-colors ${
+                showFindReplace
+                  ? "bg-blue-50 border-blue-400 text-blue-700"
+                  : "border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-500"
               }`}
             >
-              <Eye size={20} />
-              <span className="text-[9px] font-semibold tracking-wide">원본보기</span>
+              <Replace size={20} />
+              <span className="text-[9px] font-semibold tracking-wide">찾기/바꾸기</span>
             </button>
-          )}
-          <button
-            onClick={() => setShowFindReplace(v => !v)}
-            title="찾기/바꾸기"
-            className={`${changeLog.length === 0 ? "ml-auto" : ""} flex flex-col items-center gap-0.5 px-4 py-2 rounded-xl border-2 transition-colors ${
-              showFindReplace
-                ? "bg-blue-50 border-blue-400 text-blue-700"
-                : "border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-500"
-            }`}
-          >
-            <Replace size={20} />
-            <span className="text-[9px] font-semibold tracking-wide">찾기/바꾸기</span>
-          </button>
+          </div>
         </div>
 
-        {/* 찾기/바꾸기 패널 */}
+        {/* 찾기/바꾸기 모드 안내 */}
         {showFindReplace && (
-          <div className="px-8 py-4 bg-blue-50 border-b border-blue-100 shrink-0">
-            <div className="flex items-end gap-3 flex-wrap">
-              {/* 선택된 열 표시 */}
-              <div className="flex items-center gap-2 self-end pb-1">
-                <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">선택 열:</span>
-                {targetCol === -1
-                  ? <span className="text-xs text-gray-400 italic">그리드 열 타이틀 클릭</span>
-                  : <span className="text-xs font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded">
-                      {colLetter2(targetCol)}열
-                      <button onClick={() => setTargetCol(-1)} className="ml-1 text-blue-400 hover:text-red-400">×</button>
-                    </span>
-                }
-              </div>
-              {/* 검색어 */}
-              <div className="flex-1 min-w-[120px]">
-                <label className="text-[10px] text-gray-500 mb-1 block font-medium uppercase tracking-wide">검색</label>
-                <input
-                  type="text"
-                  value={findStr}
-                  onChange={e => setFindStr(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && applyReplace()}
-                  placeholder="찾을 문자열"
-                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-400"
-                />
-              </div>
-              {/* 바꿀 값 */}
-              <div className="flex-1 min-w-[120px]">
-                <label className="text-[10px] text-gray-500 mb-1 block font-medium uppercase tracking-wide">바꾸기</label>
-                <input
-                  type="text"
-                  value={replaceStr}
-                  onChange={e => setReplaceStr(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && applyReplace()}
-                  placeholder="바꿀 문자열"
-                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-400"
-                />
-              </div>
-              <button
-                onClick={applyReplace}
-                disabled={!findStr.trim()}
-                className="flex items-center gap-1.5 px-4 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 font-medium"
-              >
-                <Replace size={12} /> 모두 바꾸기
-              </button>
-              {changeLog.length > 0 && (
-                <button
-                  onClick={() => { setOverrides(new Map()); setChangeLog([]); }}
-                  className="text-xs text-red-400 hover:text-red-600 px-2"
-                >
-                  초기화
-                </button>
-              )}
-            </div>
+          <div className="px-8 py-2 bg-blue-50 border-b border-blue-100 shrink-0 flex items-center gap-3">
+            <span className="text-[11px] text-blue-600 font-medium">열을 클릭해 찾기/바꾸기를 시작하세요</span>
+            {changeLog.length > 0 && (
+              <button onClick={() => { setOverrides(new Map()); setChangeLog([]); }}
+                className="text-[11px] text-red-400 hover:text-red-600 ml-auto">초기화</button>
+            )}
+          </div>
+        )}
 
+        {/* 찾기/바꾸기 팝업 */}
+        {frPopup && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30"
+            onClick={e => { if (e.target === e.currentTarget) { setFrPopup(false); setStepMode(false); } }}>
+            <div className="bg-white rounded-xl shadow-2xl w-[400px] p-5 flex flex-col gap-4">
+              {/* 헤더 */}
+              <div className="flex items-center gap-2">
+                <Replace size={15} className="text-blue-500" />
+                <span className="text-sm font-bold text-gray-800">찾기 / 바꾸기</span>
+                {targetCol !== -1 && (
+                  <span className="ml-1 text-xs font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded">
+                    {colLetter2(targetCol)}열
+                  </span>
+                )}
+                <button onClick={() => { setFrPopup(false); setStepMode(false); }} className="ml-auto text-gray-400 hover:text-gray-600">
+                  <X size={15} />
+                </button>
+              </div>
+
+              {/* 입력 */}
+              <div className="flex flex-col gap-2">
+                <div>
+                  <label className="text-[10px] text-gray-500 mb-1 block font-medium uppercase tracking-wide">찾을 문자열</label>
+                  <input autoFocus type="text" value={findStr} onChange={e => { setFindStr(e.target.value); setStepMode(false); }}
+                    placeholder="찾을 문자열"
+                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 mb-1 block font-medium uppercase tracking-wide">바꿀 문자열</label>
+                  <input type="text" value={replaceStr} onChange={e => { setReplaceStr(e.target.value); setStepMode(false); }}
+                    placeholder="바꿀 문자열 (비워두면 삭제)"
+                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400" />
+                </div>
+              </div>
+
+              {/* 하나씩 바꾸기 모드 */}
+              {stepMode && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-center gap-3">
+                  <span className="text-xs text-amber-700 font-medium flex-1">
+                    {stepMatches.length > 0
+                      ? <>일치: <strong>{stepIdx + 1}/{stepMatches.length}</strong> — <span className="font-mono">{colLetter2(stepMatches[stepIdx].col)}{stepMatches[stepIdx].row + 1}</span></>
+                      : "일치하는 셀이 없습니다"}
+                  </span>
+                  {stepMatches.length > 0 && <>
+                    <button onClick={applyStepOne}
+                      className="px-3 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">바꾸기</button>
+                    <button onClick={skipStepOne}
+                      className="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 font-medium">건너뛰기</button>
+                  </>}
+                </div>
+              )}
+
+              {/* 버튼 */}
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => { setStepMode(false); startStepMode(); }}
+                  disabled={!findStr.trim()}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-40 font-medium">
+                  하나씩 바꾸기
+                </button>
+                <button onClick={applyReplace}
+                  disabled={!findStr.trim()}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 font-medium">
+                  <Replace size={12} /> 모두 바꾸기
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -359,7 +544,7 @@ export function ExcelPreviewDialog({ hwpTables, template, mappings, onExport, on
         </div>
 
         {/* 그리드 */}
-        <div className="flex-1 overflow-auto p-6">
+        <div ref={excelScrollRef} className="flex-1 overflow-auto p-6">
           <table className="cell-grid">
             <thead>
               <tr>
@@ -376,12 +561,16 @@ export function ExcelPreviewDialog({ hwpTables, template, mappings, onExport, on
                   ) : null;
                   const mainTh = (
                     <th key={c}
-                      onClick={() => showFindReplace && setTargetCol(prev => prev === c ? -1 : c)}
+                      onClick={() => { if (!showFindReplace) return; setTargetCol(c); setStepMode(false); setFrPopup(true); }}
+                      onMouseEnter={() => showFindReplace && setHoverCol(c)}
+                      onMouseLeave={() => showFindReplace && setHoverCol(-1)}
                       className={`col-header transition-colors ${
                         showFindReplace
                           ? targetCol === c
-                            ? "bg-blue-500 text-white cursor-pointer"
-                            : "hover:bg-blue-100 cursor-pointer"
+                            ? "bg-blue-500 text-white cursor-cell"
+                            : hoverCol === c
+                            ? "bg-blue-200 text-blue-800 cursor-cell"
+                            : "cursor-cell"
                           : ""
                       }`}
                       title={showFindReplace ? `${colLetter(c)}열 선택` : undefined}
@@ -434,18 +623,37 @@ export function ExcelPreviewDialog({ hwpTables, template, mappings, onExport, on
                     const displayText = isMapped ? (mappedText || "") : (cell?.value || "");
 
                     const isColSelected = showFindReplace && targetCol === c;
+                    const isColHovered = showFindReplace && hoverCol === c && targetCol !== c;
                     let className = "";
                     if (isMapped && mappedText) {
                       className = "preview-filled";
                     } else if (isMapped && !mappedText) {
                       className = "preview-empty-mapped";
                     }
-                    if (isColSelected) className += " outline outline-2 outline-blue-400 outline-offset-[-2px]";
-                    // 변경된 셀 강조
                     if (origValue !== undefined) className += " ring-1 ring-pink-400 ring-inset";
 
+                    const isReplaced = overrides.has(`${activeSheet}:${r}:${c}`);
+                    const isMergedH = (cell?.merge_cols ?? 1) > 1;
+                    const isStepCurrent = stepMode && stepMatches[stepIdx]?.row === r && stepMatches[stepIdx]?.col === c;
+                    const colHighlightStyle: React.CSSProperties = {
+                      ...(isStepCurrent
+                        ? { background: "#fef3c7", outline: "3px solid #f59e0b", outlineOffset: "-2px" }
+                        : !isMergedH && isColSelected
+                        ? { background: "#dbeafe", outline: "2px solid #60a5fa", outlineOffset: "-2px" }
+                        : !isMergedH && isColHovered
+                        ? { background: "#bfdbfe" }
+                        : {}),
+                      ...(isReplaced ? { color: "#dc2626", fontWeight: 600 } : {}),
+                      ...(showFindReplace ? { cursor: "cell" } : {}),
+                    };
+
                     const mainTd = (
-                      <td key={c} rowSpan={rowSpan} colSpan={colSpan} className={className} title={cell?.address}>
+                      <td key={c} rowSpan={rowSpan} colSpan={colSpan}
+                        className={className}
+                        style={colHighlightStyle}
+                        onMouseEnter={() => showFindReplace && setHoverCol(c)}
+                        onMouseLeave={() => showFindReplace && setHoverCol(-1)}
+                        title={cell?.address}>
                         {displayText}
                       </td>
                     );

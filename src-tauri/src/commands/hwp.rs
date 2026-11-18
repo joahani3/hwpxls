@@ -5,6 +5,7 @@ use zip::ZipArchive;
 use log::{error, warn, info};
 
 use crate::parsers::hwpx::{self, HwpTable};
+use crate::parsers::hwpx::html as hwpx_html;
 
 /// 한글 COM 자동화로 HWP → HWPX 변환 (내부 함수)
 fn com_convert(hwp_path: &Path) -> Result<PathBuf, String> {
@@ -135,4 +136,63 @@ pub fn convert_hwp_to_hwpx(hwp_path: String) -> Result<String, String> {
             error!("convert_hwp_to_hwpx [{}]: {}", hwp_path, e);
             e
         })
+}
+
+/// HWPX 파일을 문서 형태의 HTML로 변환하여 반환 (뷰어 미리보기용)
+#[tauri::command]
+pub fn get_hwpx_preview_html(path: String) -> Result<String, String> {
+    let file = File::open(&path).map_err(|e| e.to_string())?;
+    let reader = BufReader::new(file);
+    let mut archive = ZipArchive::new(reader).map_err(|e| e.to_string())?;
+
+    // section*.xml 파일 수집 (순서대로)
+    let mut section_indices: Vec<(usize, String)> = Vec::new();
+    for i in 0..archive.len() {
+        if let Ok(entry) = archive.by_index(i) {
+            let name = entry.name().to_ascii_lowercase();
+            if name.starts_with("contents/section") && name.ends_with(".xml") {
+                let stem = name
+                    .trim_start_matches("contents/section")
+                    .trim_end_matches(".xml");
+                let idx = stem.parse::<usize>().unwrap_or(0);
+                section_indices.push((idx, entry.name().to_string()));
+            }
+        }
+    }
+    section_indices.sort_by_key(|(i, _)| *i);
+
+    let mut all_html = String::from(r#"<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+  body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+         font-size: 13px; line-height: 1.8; color: #1a1a1a;
+         padding: 24px 32px; background: #fff; max-width: 900px; margin: 0 auto; }
+  p { margin: 0 0 4px 0; }
+  p.empty { margin: 0; height: 8px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 12px; }
+  td { border: 1px solid #aaa; padding: 4px 8px; vertical-align: top; }
+  td br:last-child { display: none; }
+  hr.section-sep { border: none; border-top: 1px dashed #ccc; margin: 16px 0; }
+</style></head><body>
+"#);
+
+    for (n, (_, name)) in section_indices.iter().enumerate() {
+        if let Ok(mut entry) = archive.by_name(name) {
+            let mut xml = String::new();
+            let _ = Read::take(&mut entry, 100 * 1024 * 1024).read_to_string(&mut xml);
+            if n > 0 {
+                all_html.push_str("<hr class=\"section-sep\">\n");
+            }
+            // section_to_html은 DOCTYPE+body를 포함하므로 body 내용만 추출
+            let fragment = hwpx_html::section_to_html(&xml);
+            if let (Some(start), Some(end)) = (fragment.find("<body>"), fragment.rfind("</body>")) {
+                let inner = &fragment[start + 6..end];
+                all_html.push_str(inner);
+            } else {
+                all_html.push_str(&fragment);
+            }
+        }
+    }
+
+    all_html.push_str("</body></html>");
+    Ok(all_html)
 }

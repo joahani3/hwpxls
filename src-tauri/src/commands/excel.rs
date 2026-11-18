@@ -257,43 +257,59 @@ pub fn export_excel(
         }
     }
 
-    // 5. 변경내역 시트 추가
-    if let Some(entries) = change_log_entries {
-        if !entries.is_empty() {
-            use rust_xlsxwriter::Color;
-            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    // 5. 변경내역 시트 추가 (항상 생성 — 헤더 행 메타 포함)
+    {
+        use rust_xlsxwriter::Color;
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-            let header_fmt = Format::new()
-                .set_bold()
-                .set_background_color(Color::RGB(0x2563EB))
-                .set_font_color(Color::White);
-            let orig_fmt = Format::new().set_font_color(Color::RGB(0xDC2626));
-            let new_fmt  = Format::new().set_font_color(Color::RGB(0x2563EB));
-            let meta_fmt = Format::new()
-                .set_italic()
-                .set_font_color(Color::RGB(0x9CA3AF));
+        // 현재 시트의 헤더 행 (매핑에서 최솟값, 없으면 0)
+        let header_row = mappings.iter()
+            .filter(|m| m.excel_sheet == sheet_idx)
+            .map(|m| m.excel_row)
+            .min()
+            .unwrap_or(0);
 
-            let hist = workbook.add_worksheet();
-            hist.set_name("변경내역").map_err(|e| e.to_string())?;
+        let meta_fmt = Format::new()
+            .set_italic()
+            .set_font_color(Color::RGB(0x9CA3AF));
+        let key_fmt = Format::new()
+            .set_bold()
+            .set_font_color(Color::RGB(0x6B7280));
+        let header_fmt = Format::new()
+            .set_bold()
+            .set_background_color(Color::RGB(0x2563EB))
+            .set_font_color(Color::White);
+        let orig_fmt = Format::new().set_font_color(Color::RGB(0xDC2626));
+        let new_fmt  = Format::new().set_font_color(Color::RGB(0x2563EB));
 
-            // 메타 정보
-            hist.write_string_with_format(0, 0, "변경일시", &meta_fmt).map_err(|e| e.to_string())?;
-            hist.write_string_with_format(0, 1, &now, &meta_fmt).map_err(|e| e.to_string())?;
+        let hist = workbook.add_worksheet();
+        hist.set_name("변경내역").map_err(|e| e.to_string())?;
 
-            // 헤더
-            hist.write_string_with_format(2, 0, "셀 주소", &header_fmt).map_err(|e| e.to_string())?;
-            hist.write_string_with_format(2, 1, "원본값", &header_fmt).map_err(|e| e.to_string())?;
-            hist.write_string_with_format(2, 2, "바꾼 값", &header_fmt).map_err(|e| e.to_string())?;
+        // 메타: 변경일시
+        hist.write_string_with_format(0, 0, "변경일시", &key_fmt).map_err(|e| e.to_string())?;
+        hist.write_string_with_format(0, 1, &now, &meta_fmt).map_err(|e| e.to_string())?;
 
-            hist.set_column_width(0, 10).map_err(|e| e.to_string())?;
-            hist.set_column_width(1, 40).map_err(|e| e.to_string())?;
-            hist.set_column_width(2, 40).map_err(|e| e.to_string())?;
+        // 메타: 헤더행 (0-indexed, 프론트에서 isVisible 판단에 사용)
+        hist.write_string_with_format(1, 0, "헤더행", &key_fmt).map_err(|e| e.to_string())?;
+        hist.write_number(1, 1, header_row as f64).map_err(|e| e.to_string())?;
 
-            for (i, entry) in entries.iter().enumerate() {
-                let r = (i + 3) as u32;
-                hist.write_string(r, 0, &entry.address).map_err(|e| e.to_string())?;
-                hist.write_string_with_format(r, 1, &entry.original, &orig_fmt).map_err(|e| e.to_string())?;
-                hist.write_string_with_format(r, 2, &entry.replaced, &new_fmt).map_err(|e| e.to_string())?;
+        hist.set_column_width(0, 10).map_err(|e| e.to_string())?;
+        hist.set_column_width(1, 40).map_err(|e| e.to_string())?;
+        hist.set_column_width(2, 40).map_err(|e| e.to_string())?;
+
+        // 변경 내역 (있는 경우만)
+        if let Some(entries) = change_log_entries {
+            if !entries.is_empty() {
+                hist.write_string_with_format(3, 0, "셀 주소", &header_fmt).map_err(|e| e.to_string())?;
+                hist.write_string_with_format(3, 1, "원본값", &header_fmt).map_err(|e| e.to_string())?;
+                hist.write_string_with_format(3, 2, "바꾼 값", &header_fmt).map_err(|e| e.to_string())?;
+
+                for (i, entry) in entries.iter().enumerate() {
+                    let r = (i + 4) as u32;
+                    hist.write_string(r, 0, &entry.address).map_err(|e| e.to_string())?;
+                    hist.write_string_with_format(r, 1, &entry.original, &orig_fmt).map_err(|e| e.to_string())?;
+                    hist.write_string_with_format(r, 2, &entry.replaced, &new_fmt).map_err(|e| e.to_string())?;
+                }
             }
         }
     }

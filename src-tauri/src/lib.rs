@@ -15,6 +15,7 @@ pub fn run() {
             commands::hwp::parse_hwpx_tables,
             commands::hwp::debug_hwpx,
             commands::hwp::convert_hwp_to_hwpx,
+            commands::hwp::get_hwpx_preview_html,
             commands::excel::read_excel_template,
             commands::excel::export_excel,
             commands::util::get_log_content,

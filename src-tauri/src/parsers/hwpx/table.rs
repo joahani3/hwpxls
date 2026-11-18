@@ -113,16 +113,31 @@ pub fn extract_tables(xml_content: &str) -> Result<Vec<HwpTable>, ParseError> {
                             cell_text.clear();
                             col_span = 1;
                             row_span = 1;
+                            // HWPX는 rowSpanCount/colSpanCount을 hp:tc 속성에 직접 저장
+                            for attr in e.attributes().flatten() {
+                                let k = local_name_lower(attr.key.as_ref());
+                                let v = std::str::from_utf8(&attr.value).unwrap_or("1");
+                                match k.as_str() {
+                                    "colspan" | "colspancount" => {
+                                        col_span = v.parse().unwrap_or(1).max(1);
+                                    }
+                                    "rowspan" | "rowspancount" => {
+                                        row_span = v.parse().unwrap_or(1).max(1);
+                                    }
+                                    _ => {}
+                                }
+                            }
                         } else if in_tc {
                             tc_start_depth += 1;
                         }
                     }
-                    "tcpr" => {
-                        // tcPr: colspan/rowspan 읽기 (tc 직속 자식)
+                    "tcpr" | "cellspan" => {
+                        // hp:tcPr 또는 hp:cellSpan: colspan/rowspan 읽기
+                        // HWPX 실제 형식은 <hp:cellSpan colSpan="X" rowSpan="Y" /> 사용
                         if in_tc {
                             tc_start_depth += 1;
                             for attr in e.attributes().flatten() {
-                                let k = local_name_lower(attr.key.as_ref()).to_ascii_lowercase();
+                                let k = local_name_lower(attr.key.as_ref());
                                 let v = std::str::from_utf8(&attr.value).unwrap_or("1");
                                 match k.as_str() {
                                     "colspan" | "colspancount" => {
@@ -156,7 +171,6 @@ pub fn extract_tables(xml_content: &str) -> Result<Vec<HwpTable>, ParseError> {
                 let tag = local_name_lower(e.local_name().as_ref());
 
                 if tag == "tbl" {
-                    // 빈 tbl은 존재하지 않지만 혹시 모르니 처리
                     continue;
                 }
 
@@ -164,10 +178,11 @@ pub fn extract_tables(xml_content: &str) -> Result<Vec<HwpTable>, ParseError> {
                     continue;
                 }
 
-                // tcPr 가 self-closing 형태일 경우 (드물지만)
-                if tag == "tcpr" {
+                // HWPX 실제 구조: <hp:cellSpan colSpan="X" rowSpan="Y" />
+                // hp:tcPr 가 아닌 hp:cellSpan self-closing 요소에 span 정보가 있음
+                if tag == "cellspan" {
                     for attr in e.attributes().flatten() {
-                        let k = local_name_lower(attr.key.as_ref()).to_ascii_lowercase();
+                        let k = local_name_lower(attr.key.as_ref());
                         let v = std::str::from_utf8(&attr.value).unwrap_or("1");
                         match k.as_str() {
                             "colspan" | "colspancount" => {
