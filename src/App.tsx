@@ -1,7 +1,8 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { AlertCircle, Bug, Info, Replace } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
+import { AlertCircle, Bug, Info, FileText, FileSpreadsheet } from "lucide-react";
 
 import {
   HwpTable,
@@ -46,27 +47,23 @@ export default function App() {
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState("처리 중...");
+  const [dragOver, setDragOver] = useState(false);
+  const [dragFileType, setDragFileType] = useState<"hwp" | "xlsx" | "mixed" | null>(null);
 
-  // 한글 파일 열기
-  const openHwpFile = async () => {
+  // 한글 파일 로드 (경로 직접)
+  const loadHwpFile = useCallback(async (path: string) => {
     setError(null);
-    const selected = await open({
-      filters: [{ name: "한글 문서", extensions: ["hwpx", "hwp"] }],
-      multiple: false,
-    });
-    if (!selected || typeof selected !== "string") return;
-
+    const isHwp = path.toLowerCase().endsWith(".hwp");
+    setLoadingMsg(isHwp ? "HWP 변환 중... (한글 실행)" : "처리 중...");
     setLoading(true);
     try {
-      const path = selected;
-      // .hwp / .hwpx 모두 parse_hwpx_tables 에서 ZIP+XML 시도 → 실패 시 안내 메시지
       const tables = await invoke<HwpTable[]>("parse_hwpx_tables", { path });
       setHwpTables(tables);
       setHwpPath(path);
       setActiveHwpTable(0);
       setSelectedHwpCell(null);
       setMappings([]);
-      // 엑셀 템플릿이 이미 열려 있으면 자동 매핑 팝업
       setTemplate((tmpl) => {
         if (tmpl && tables.length > 0) {
           const key = `${path}::${tmpl.path}`;
@@ -82,35 +79,90 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  // 엑셀 템플릿 열기
-  const openExcelTemplate = async () => {
+  const EXCEL_EXTS = ["xlsx", "xls", "xlsb", "ods"];
+
+  // 엑셀 파일 로드 (경로 직접)
+  const loadExcelFile = useCallback(async (path: string) => {
     setError(null);
-    const selected = await open({
-      filters: [{ name: "Excel 파일", extensions: ["xlsx"] }],
-      multiple: false,
-    });
-    if (!selected || typeof selected !== "string") return;
-
+    setLoadingMsg("처리 중...");
     setLoading(true);
     try {
-      const tmpl = await invoke<ExcelTemplate>("read_excel_template", { path: selected });
+      const tmpl = await invoke<ExcelTemplate>("read_excel_template", { path });
       setTemplate(tmpl);
       setActiveSheet(0);
-      // 한글 표가 이미 열려 있으면 자동 매핑 팝업
-      if (hwpTables.length > 0 && hwpPath) {
-        const key = `${hwpPath}::${selected}`;
-        if (autoMappingShownKey.current !== key) {
-          autoMappingShownKey.current = key;
-          setTimeout(() => setShowAutoMapping(true), 100);
+      setHwpPath((hwp) => {
+        if (hwp) {
+          const key = `${hwp}::${path}`;
+          if (autoMappingShownKey.current !== key) {
+            autoMappingShownKey.current = key;
+            setTimeout(() => setShowAutoMapping(true), 100);
+          }
         }
-      }
+        return hwp;
+      });
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // 드래그 앤 드롭 이벤트
+  useEffect(() => {
+    const isExcelExt = (ext: string | undefined) => !!ext && EXCEL_EXTS.includes(ext);
+
+    const unlistenDrop = listen<{ paths: string[] }>("tauri://drag-drop", (e) => {
+      setDragOver(false);
+      setDragFileType(null);
+      for (const path of e.payload.paths) {
+        const ext = path.split(".").pop()?.toLowerCase();
+        if (ext === "hwp" || ext === "hwpx") loadHwpFile(path);
+        else if (isExcelExt(ext)) loadExcelFile(path);
+      }
+    });
+
+    const unlistenEnter = listen<{ paths: string[] }>("tauri://drag-enter", (e) => {
+      const exts = e.payload.paths.map((p) => p.split(".").pop()?.toLowerCase());
+      const hasHwp = exts.some((x) => x === "hwp" || x === "hwpx");
+      const hasXlsx = exts.some(isExcelExt);
+      setDragFileType(hasHwp && hasXlsx ? "mixed" : hasHwp ? "hwp" : hasXlsx ? "xlsx" : null);
+      setDragOver(true);
+    });
+
+    const unlistenLeave = listen("tauri://drag-leave", () => {
+      setDragOver(false);
+      setDragFileType(null);
+    });
+
+    return () => {
+      unlistenDrop.then((f) => f());
+      unlistenEnter.then((f) => f());
+      unlistenLeave.then((f) => f());
+    };
+  }, [loadHwpFile, loadExcelFile]);
+
+  // 한글 파일 열기 (다이얼로그)
+  const openHwpFile = async () => {
+    setError(null);
+    const selected = await open({
+      filters: [{ name: "한글 문서", extensions: ["hwpx", "hwp"] }],
+      multiple: false,
+    });
+    if (!selected || typeof selected !== "string") return;
+    await loadHwpFile(selected);
+  };
+
+  // 엑셀 템플릿 열기 (다이얼로그)
+  const openExcelTemplate = async () => {
+    setError(null);
+    const selected = await open({
+      filters: [{ name: "Excel 파일", extensions: EXCEL_EXTS }],
+      multiple: false,
+    });
+    if (!selected || typeof selected !== "string") return;
+    await loadExcelFile(selected);
   };
 
   // 한글 셀 클릭
@@ -171,6 +223,12 @@ export default function App() {
     setMappings((prev) => [...prev, ...newMappings]);
     setShowAutoMapping(false);
     if (newMappings.length > 0) setShowPreview(true);
+  };
+
+  // 재매핑: 기존 매핑 초기화 후 자동 매핑 다이얼로그 재오픈
+  const handleReMap = () => {
+    setMappings([]);
+    setShowAutoMapping(true);
   };
 
   // 매핑 삭제
@@ -322,6 +380,7 @@ export default function App() {
               onOpen={openExcelTemplate}
               onConvert={template ? () => setShowPreview(true) : undefined}
               onAutoMap={hwpTables.length > 0 && template ? () => setShowAutoMapping(true) : undefined}
+              onReMap={hwpTables.length > 0 && template && mappings.length > 0 ? handleReMap : undefined}
               hwpLoaded={hwpTables.length > 0 && !!template}
               autoMapDone={(() => {
                 if (!template || hwpTables.length === 0 || mappings.length === 0) return false;
@@ -387,11 +446,39 @@ export default function App() {
         />
       )}
 
+      {/* 드래그 오버레이 */}
+      {dragOver && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+          <div className="absolute inset-0 bg-blue-500/20 backdrop-blur-[2px] border-4 border-dashed border-blue-400 rounded-xl m-3" />
+          <div className="relative flex flex-col items-center gap-4 bg-white/90 rounded-2xl shadow-2xl px-10 py-8">
+            <div className="flex gap-6">
+              <div className={`flex flex-col items-center gap-1.5 px-5 py-3 rounded-xl transition-colors ${
+                dragFileType === "hwp" || dragFileType === "mixed"
+                  ? "bg-blue-100 text-blue-700"
+                  : "text-gray-400"
+              }`}>
+                <FileText size={32} />
+                <span className="text-xs font-semibold">.hwp / .hwpx</span>
+              </div>
+              <div className={`flex flex-col items-center gap-1.5 px-5 py-3 rounded-xl transition-colors ${
+                dragFileType === "xlsx" || dragFileType === "mixed"
+                  ? "bg-green-100 text-green-700"
+                  : "text-gray-400"
+              }`}>
+                <FileSpreadsheet size={32} />
+                <span className="text-xs font-semibold">.xlsx</span>
+              </div>
+            </div>
+            <span className="text-sm font-bold text-gray-700">파일을 여기에 놓으세요</span>
+          </div>
+        </div>
+      )}
+
       {/* 로딩 오버레이 */}
       {loading && (
         <div className="fixed inset-0 bg-white/60 flex items-center justify-center z-40">
           <div className="bg-white rounded-xl shadow-lg px-6 py-4 text-sm text-gray-600">
-            처리 중...
+            {loadingMsg}
           </div>
         </div>
       )}

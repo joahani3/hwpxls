@@ -2,12 +2,9 @@ use std::io::BufReader;
 use std::path::Path;
 use log::error;
 
-use calamine::{Data, Reader, Xlsx, open_workbook};
-use quick_xml::events::Event;
-use quick_xml::Reader as XmlReader;
+use calamine::{Data, Dimensions, Reader, Sheets, open_workbook_auto};
 use rust_xlsxwriter::{Format, Workbook};
 use serde::{Deserialize, Serialize};
-use zip::ZipArchive;
 
 use crate::parsers::hwpx::HwpTable;
 
@@ -75,79 +72,27 @@ fn cell_address(row: u32, col: u32) -> String {
     format!("{}{}", col_to_letter(col), row + 1)
 }
 
-/// xlsx 파일에서 병합 영역 파싱 (xl/worksheets/sheetN.xml의 <mergeCells>)
-fn read_merge_cells(path: &Path, sheet_index: usize) -> Vec<(u32, u32, u32, u32)> {
-    // returns Vec<(first_row, first_col, last_row, last_col)>  0-based
-    let Ok(file) = std::fs::File::open(path) else { return vec![] };
-    let reader = BufReader::new(file);
-    let Ok(mut archive) = ZipArchive::new(reader) else { return vec![] };
-
-    let sheet_name = format!("xl/worksheets/sheet{}.xml", sheet_index + 1);
-    let Ok(mut entry) = archive.by_name(&sheet_name) else { return vec![] };
-
-    let mut xml = String::new();
-    let _ = std::io::Read::read_to_string(&mut entry, &mut xml);
-
-    let mut merges = Vec::new();
-    let mut xr = XmlReader::from_str(&xml);
-    xr.config_mut().trim_text(true);
-
-    let mut in_merge_cells = false;
-    loop {
-        match xr.read_event() {
-            Ok(Event::Start(ref ev)) | Ok(Event::Empty(ref ev)) => {
-                let local = ev.local_name();
-                let name = std::str::from_utf8(local.as_ref()).unwrap_or("");
-                if name == "mergeCells" {
-                    in_merge_cells = true;
-                } else if name == "mergeCell" && in_merge_cells {
-                    for attr in ev.attributes().flatten() {
-                        let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-                        if key == "ref" {
-                            let val = std::str::from_utf8(&attr.value).unwrap_or("").to_string();
-                            if let Some((start, end)) = val.split_once(':') {
-                                if let (Some(sc), Some(ec)) = (parse_cell_ref(start), parse_cell_ref(end)) {
-                                    merges.push((sc.0, sc.1, ec.0, ec.1));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Ok(Event::End(ref ev)) => {
-                let local = ev.local_name();
-                if std::str::from_utf8(local.as_ref()).unwrap_or("") == "mergeCells" {
-                    in_merge_cells = false;
-                }
-            }
-            Ok(Event::Eof) => break,
-            _ => {}
-        }
-    }
-
-    merges
+fn dims_to_tuple(d: &Dimensions) -> (u32, u32, u32, u32) {
+    (d.start.0, d.start.1, d.end.0, d.end.1)
 }
 
-/// "B3" → (row=2, col=1) 0-based
-fn parse_cell_ref(s: &str) -> Option<(u32, u32)> {
-    let s = s.trim();
-    let col_part: String = s.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
-    let row_part: String = s.chars().skip_while(|c| c.is_ascii_alphabetic()).collect();
-    let row: u32 = row_part.parse::<u32>().ok()?.checked_sub(1)?;
-    let mut col = 0u32;
-    for c in col_part.to_ascii_uppercase().chars() {
-        col = col * 26 + (c as u32 - 'A' as u32 + 1);
-    }
-    Some((row, col.checked_sub(1)?))
+fn get_merge_cells(workbook: &mut Sheets<BufReader<std::fs::File>>, sheet_name: &str) -> Vec<(u32, u32, u32, u32)> {
+    let dims: Vec<Dimensions> = match workbook {
+        Sheets::Xlsx(wb) => wb.merge_cells_by_sheet_name(sheet_name).unwrap_or_default(),
+        Sheets::Xls(wb)  => wb.merge_cells_by_sheet_name(sheet_name).unwrap_or_default(),
+        Sheets::Xlsb(_)  => vec![],
+        Sheets::Ods(_)   => vec![],
+    };
+    dims.iter().map(dims_to_tuple).collect()
 }
 
-/// 엑셀 템플릿 파일 읽기
+/// 엑셀 템플릿 파일 읽기 (xlsx / xls / xlsb / ods 모두 지원)
 #[tauri::command]
 pub fn read_excel_template(path: String) -> Result<ExcelTemplate, String> {
     let p = Path::new(&path);
-    let mut workbook: Xlsx<std::io::BufReader<std::fs::File>> =
-        open_workbook(p).map_err(|err: calamine::XlsxError| {
-            let msg = err.to_string();
+    let mut workbook: Sheets<BufReader<std::fs::File>> =
+        open_workbook_auto(p).map_err(|e| {
+            let msg = e.to_string();
             error!("read_excel_template [{}]: {}", path, msg);
             msg
         })?;
@@ -155,12 +100,12 @@ pub fn read_excel_template(path: String) -> Result<ExcelTemplate, String> {
 
     let mut sheets = Vec::new();
 
-    for (sheet_idx, sheet_name) in sheet_names.iter().enumerate() {
+    for sheet_name in sheet_names.iter() {
         let range = workbook
             .worksheet_range(sheet_name)
             .map_err(|e| e.to_string())?;
 
-        let merges = read_merge_cells(p, sheet_idx);
+        let merges = get_merge_cells(&mut workbook, sheet_name);
 
         // merge lookup: (row, col) → (merge_rows, merge_cols)
         let mut merge_map: std::collections::HashMap<(u32, u32), (u32, u32)> = std::collections::HashMap::new();

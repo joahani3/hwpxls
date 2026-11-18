@@ -1,4 +1,4 @@
-import { FileSpreadsheet, Play, Sparkles } from "lucide-react";
+import { FileSpreadsheet, Play, Sparkles, RefreshCw } from "lucide-react";
 import { ExcelTemplate, ExcelCell, CellMapping } from "../types";
 import { mappingColor } from "../mappingColors";
 
@@ -12,6 +12,7 @@ interface Props {
   onOpen?: () => void;
   onConvert?: () => void;
   onAutoMap?: () => void;
+  onReMap?: () => void;
   hwpLoaded?: boolean;
   autoMapDone?: boolean;
 }
@@ -28,7 +29,7 @@ function colLetter(col: number): string {
 }
 
 export function ExcelTemplateView({
-  template, activeSheetIdx, onSheetChange, onCellClick, mappings, pendingHwpSelected, onOpen, onConvert, onAutoMap, hwpLoaded, autoMapDone,
+  template, activeSheetIdx, onSheetChange, onCellClick, mappings, pendingHwpSelected, onOpen, onConvert, onAutoMap, onReMap, hwpLoaded, autoMapDone,
 }: Props) {
   if (!template) {
     return (
@@ -148,20 +149,26 @@ export function ExcelTemplateView({
         {(hwpLoaded || mappings.length > 0) && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="flex flex-col items-center gap-3 pointer-events-auto">
-              {/* 자동 매핑 — 한글+엑셀 둘 다 열렸을 때 */}
-              {hwpLoaded && onAutoMap && (
-                <button
-                  onClick={!autoMapDone ? onAutoMap : undefined}
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-full shadow-lg transition-all font-bold text-sm whitespace-nowrap ${
-                    autoMapDone
-                      ? "bg-gray-300 text-gray-500 cursor-default shadow-none"
-                      : "bg-purple-600 text-white hover:bg-purple-700 active:scale-95"
-                  }`}
-                  style={!autoMapDone ? { boxShadow: "0 4px 20px rgba(124,58,237,0.4)" } : undefined}
-                >
-                  <Sparkles size={15} />
-                  {autoMapDone ? "자동매핑 완료" : "자동 매핑"}
-                </button>
+              {/* 자동 매핑 / 재매핑 */}
+              {hwpLoaded && (
+                autoMapDone && onReMap ? (
+                  <button
+                    onClick={onReMap}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white rounded-full shadow-lg hover:bg-purple-700 active:scale-95 transition-all font-bold text-sm whitespace-nowrap"
+                    style={{ boxShadow: "0 4px 20px rgba(124,58,237,0.4)" }}
+                    title="매핑을 초기화하고 자동 매핑 다시 실행"
+                  >
+                    <RefreshCw size={15} /> 재매핑
+                  </button>
+                ) : onAutoMap ? (
+                  <button
+                    onClick={onAutoMap}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white rounded-full shadow-lg hover:bg-purple-700 active:scale-95 transition-all font-bold text-sm whitespace-nowrap"
+                    style={{ boxShadow: "0 4px 20px rgba(124,58,237,0.4)" }}
+                  >
+                    <Sparkles size={15} /> 자동 매핑
+                  </button>
+                ) : null
               )}
               {/* 변환 시작 — 매핑이 있을 때 */}
               {mappings.length > 0 && onConvert && (
