@@ -45,6 +45,21 @@ pub struct CellMapping {
     pub excel_col: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CellOverride {
+    pub excel_sheet: usize,
+    pub excel_row: u32,
+    pub excel_col: u32,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChangeLogEntry {
+    pub address: String,   // e.g. "A5"
+    pub original: String,
+    pub replaced: String,
+}
+
 fn col_to_letter(col: u32) -> String {
     let mut result = String::new();
     let mut n = col + 1;
@@ -225,6 +240,8 @@ pub fn export_excel(
     hwp_tables: Vec<HwpTable>,
     mappings: Vec<CellMapping>,
     sheet_idx: usize,
+    cell_overrides: Option<Vec<CellOverride>>,
+    change_log_entries: Option<Vec<ChangeLogEntry>>,
 ) -> Result<(), String> {
     // 1. 템플릿 읽기
     let template = read_excel_template(template_path.clone())?;
@@ -277,6 +294,61 @@ pub fn export_excel(
                     ws.write_string(excel_row, mapping.excel_col as u16, &hwp_cell.text)
                         .map_err(|e| e.to_string())?;
                 }
+            }
+        }
+    }
+
+    // 4. 찾기/바꾸기 오버라이드 적용
+    if let Some(overrides) = cell_overrides {
+        for ov in &overrides {
+            if ov.excel_sheet != sheet_idx { continue; }
+            if ov.value.contains('\n') {
+                ws.write_string_with_format(ov.excel_row, ov.excel_col as u16, &ov.value, &wrap_fmt)
+                    .map_err(|e| e.to_string())?;
+            } else {
+                ws.write_string(ov.excel_row, ov.excel_col as u16, &ov.value)
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
+    // 5. 변경내역 시트 추가
+    if let Some(entries) = change_log_entries {
+        if !entries.is_empty() {
+            use rust_xlsxwriter::Color;
+            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+            let header_fmt = Format::new()
+                .set_bold()
+                .set_background_color(Color::RGB(0x2563EB))
+                .set_font_color(Color::White);
+            let orig_fmt = Format::new().set_font_color(Color::RGB(0xDC2626));
+            let new_fmt  = Format::new().set_font_color(Color::RGB(0x2563EB));
+            let meta_fmt = Format::new()
+                .set_italic()
+                .set_font_color(Color::RGB(0x9CA3AF));
+
+            let hist = workbook.add_worksheet();
+            hist.set_name("변경내역").map_err(|e| e.to_string())?;
+
+            // 메타 정보
+            hist.write_string_with_format(0, 0, "변경일시", &meta_fmt).map_err(|e| e.to_string())?;
+            hist.write_string_with_format(0, 1, &now, &meta_fmt).map_err(|e| e.to_string())?;
+
+            // 헤더
+            hist.write_string_with_format(2, 0, "셀 주소", &header_fmt).map_err(|e| e.to_string())?;
+            hist.write_string_with_format(2, 1, "원본값", &header_fmt).map_err(|e| e.to_string())?;
+            hist.write_string_with_format(2, 2, "바꾼 값", &header_fmt).map_err(|e| e.to_string())?;
+
+            hist.set_column_width(0, 10).map_err(|e| e.to_string())?;
+            hist.set_column_width(1, 40).map_err(|e| e.to_string())?;
+            hist.set_column_width(2, 40).map_err(|e| e.to_string())?;
+
+            for (i, entry) in entries.iter().enumerate() {
+                let r = (i + 3) as u32;
+                hist.write_string(r, 0, &entry.address).map_err(|e| e.to_string())?;
+                hist.write_string_with_format(r, 1, &entry.original, &orig_fmt).map_err(|e| e.to_string())?;
+                hist.write_string_with_format(r, 2, &entry.replaced, &new_fmt).map_err(|e| e.to_string())?;
             }
         }
     }

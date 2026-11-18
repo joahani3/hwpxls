@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { AlertCircle, Bug, Info } from "lucide-react";
+import { AlertCircle, Bug, Info, Replace } from "lucide-react";
 
 import {
   HwpTable,
@@ -9,6 +9,8 @@ import {
   ExcelCell,
   CellMapping,
   SelectedHwpCell,
+  CellOverride,
+  ChangeLogEntry,
 } from "./types";
 import { HwpTableView } from "./components/HwpTableView";
 import { ExcelTemplateView } from "./components/ExcelTemplateView";
@@ -177,13 +179,19 @@ export default function App() {
   };
 
   // 엑셀 출력 — 저장된 경로 반환 (성공 시), null (취소/실패)
-  const exportExcel = async (): Promise<string | null> => {
+  const exportExcel = async (overrides: CellOverride[] = [], changeLog: ChangeLogEntry[] = []): Promise<string | null> => {
     if (!template || mappings.length === 0) return null;
     setError(null);
 
+    const hwpStem = hwpPath
+      ? hwpPath.split(/[\\/]/).pop()!.replace(/\.[^.]+$/, "")
+      : "output";
+    const ts = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 15).replace(".", "");
+    const defaultName = `${hwpStem}_${ts.slice(0, 8)}_${ts.slice(8, 14)}.xlsx`;
+
     const outputPath = await save({
       filters: [{ name: "Excel 파일", extensions: ["xlsx"] }],
-      defaultPath: "output.xlsx",
+      defaultPath: defaultName,
     });
     if (!outputPath) return null;
 
@@ -195,6 +203,8 @@ export default function App() {
         hwpTables,
         mappings,
         sheetIdx: activeSheet,
+        cellOverrides: overrides,
+        changeLogEntries: changeLog.length > 0 ? changeLog : null,
       });
       return outputPath;
     } catch (e) {

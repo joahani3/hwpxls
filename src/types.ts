@@ -48,3 +48,16 @@ export interface SelectedHwpCell {
   row: number;
   col: number;
 }
+
+export interface CellOverride {
+  excel_sheet: number;
+  excel_row: number;
+  excel_col: number;
+  value: string;
+}
+
+export interface ChangeLogEntry {
+  address: string;
+  original: string;
+  replaced: string;
+}
