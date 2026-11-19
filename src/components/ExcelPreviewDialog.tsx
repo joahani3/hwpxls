@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Download, CheckCircle, FolderOpen, FileSpreadsheet, Replace, Eye, Link2, Link2Off } from "lucide-react";
+
+// 아래 방향 화살표 커서 (열 선택 모드)
+const COL_SELECT_CURSOR = (() => {
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='16' height='20'><polygon points='1,1 15,1 8,11' fill='%23374151' stroke='white' stroke-width='1.2' stroke-linejoin='round'/><rect x='6' y='11' width='4' height='7' rx='1' fill='%23374151'/></svg>`;
+  return `url("data:image/svg+xml,${svg}") 8 1, default`;
+})();
 import { open as openPath } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
 import { HwpTable, ExcelTemplate, ExcelCell, CellMapping, CellOverride, ChangeLogEntry as ChangeLogEntryType } from "../types";
@@ -414,8 +420,9 @@ export function ExcelPreviewDialog({ hwpTables, hwpPath, template, mappings, onE
                     {colLetter2(targetCol)}열
                   </span>
                 )}
-                <button onClick={() => { setFrPopup(false); setStepMode(false); }} className="ml-auto text-gray-400 hover:text-gray-600">
-                  <X size={15} />
+                <div className="flex-1" />
+                <button onClick={() => { setFrPopup(false); setStepMode(false); }} className="text-gray-400 hover:text-gray-600 p-0.5 rounded hover:bg-gray-100 transition-colors">
+                  <X size={16} />
                 </button>
               </div>
 
@@ -444,25 +451,19 @@ export function ExcelPreviewDialog({ hwpTables, hwpPath, template, mappings, onE
                       : "일치하는 셀이 없습니다"}
                   </span>
                   {stepMatches.length > 0 && <>
-                    <button onClick={applyStepOne}
-                      className="px-3 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">바꾸기</button>
-                    <button onClick={skipStepOne}
-                      className="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 font-medium">건너뛰기</button>
+                    <button onClick={applyStepOne} className="btn btn-blue">바꾸기</button>
+                    <button onClick={skipStepOne} className="btn btn-gray">건너뛰기</button>
                   </>}
                 </div>
               )}
 
               {/* 버튼 */}
               <div className="flex gap-2 justify-end">
-                <button onClick={() => { setStepMode(false); startStepMode(); }}
-                  disabled={!findStr.trim()}
-                  className="flex items-center gap-1.5 px-4 py-2 text-xs bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-40 font-medium">
+                <button onClick={() => { setStepMode(false); startStepMode(); }} disabled={!findStr.trim()} className="btn btn-amber">
                   하나씩 바꾸기
                 </button>
-                <button onClick={applyReplace}
-                  disabled={!findStr.trim()}
-                  className="flex items-center gap-1.5 px-4 py-2 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 font-medium">
-                  <Replace size={12} /> 모두 바꾸기
+                <button onClick={applyReplace} disabled={!findStr.trim()} className="btn btn-blue">
+                  <Replace size={13} /> 모두 바꾸기
                 </button>
               </div>
             </div>
@@ -476,16 +477,10 @@ export function ExcelPreviewDialog({ hwpTables, hwpPath, template, mappings, onE
             <span className="text-xs text-emerald-700 font-medium truncate flex-1" title={savedPath}>
               {savedPath}
             </span>
-            <button
-              onClick={openFile}
-              className="flex items-center gap-1 px-3 py-1 text-xs bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 font-medium shrink-0"
-            >
+            <button onClick={openFile} className="btn btn-green shrink-0">
               <FileSpreadsheet size={11} /> 파일 열기
             </button>
-            <button
-              onClick={openFolder}
-              className="flex items-center gap-1 px-3 py-1 text-xs text-emerald-700 border border-emerald-300 rounded-lg hover:bg-emerald-100 shrink-0"
-            >
+            <button onClick={openFolder} className="btn btn-gray shrink-0">
               <FolderOpen size={11} /> 폴더 열기
             </button>
           </div>
@@ -493,16 +488,12 @@ export function ExcelPreviewDialog({ hwpTables, hwpPath, template, mappings, onE
 
         {/* 시트 탭 */}
         {template.sheets.length > 1 && (
-          <div className="flex gap-1 px-4 pt-2 border-b border-gray-100 shrink-0">
+          <div className="tab-bar shrink-0">
             {template.sheets.map((s, i) => (
               <button
                 key={i}
                 onClick={() => setActiveSheet(i)}
-                className={`px-3 py-1.5 text-xs rounded-t transition-colors ${
-                  i === activeSheet
-                    ? "bg-white border border-b-white border-gray-200 text-green-700 font-semibold -mb-px"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
+                className={`tab-item${i === activeSheet ? " active" : ""}`}
               >
                 {s.name}
               </button>
@@ -564,15 +555,17 @@ export function ExcelPreviewDialog({ hwpTables, hwpPath, template, mappings, onE
                       onClick={() => { if (!showFindReplace) return; setTargetCol(c); setStepMode(false); setFrPopup(true); }}
                       onMouseEnter={() => showFindReplace && setHoverCol(c)}
                       onMouseLeave={() => showFindReplace && setHoverCol(-1)}
-                      className={`col-header transition-colors ${
-                        showFindReplace
-                          ? targetCol === c
-                            ? "bg-blue-500 text-white cursor-cell"
-                            : hoverCol === c
-                            ? "bg-blue-200 text-blue-800 cursor-cell"
-                            : "cursor-cell"
-                          : ""
-                      }`}
+                      className="col-header transition-colors"
+                      style={{
+                        ...(showFindReplace ? { cursor: COL_SELECT_CURSOR } : {}),
+                        ...(showFindReplace && targetCol === c
+                          ? { background: "#3b82f6", color: "#fff" }
+                          : showFindReplace && hoverCol === c
+                          ? { background: "#bfdbfe", color: "#1e40af" }
+                          : showFindReplace
+                          ? { background: "#f1f5f9" }
+                          : {}),
+                      }}
                       title={showFindReplace ? `${colLetter(c)}열 선택` : undefined}
                     >
                       {colLetter(c)}
@@ -644,7 +637,7 @@ export function ExcelPreviewDialog({ hwpTables, hwpPath, template, mappings, onE
                         ? { background: "#bfdbfe" }
                         : {}),
                       ...(isReplaced ? { color: "#dc2626", fontWeight: 600 } : {}),
-                      ...(showFindReplace ? { cursor: "cell" } : {}),
+                      ...(showFindReplace ? { cursor: COL_SELECT_CURSOR } : {}),
                     };
 
                     const mainTd = (
@@ -671,18 +664,11 @@ export function ExcelPreviewDialog({ hwpTables, hwpPath, template, mappings, onE
             총 {mappings.length}개 매핑 적용
           </span>
           <div className="flex-1" />
-          <button
-            onClick={handleExport}
-            disabled={loading}
-            className="flex items-center gap-2 px-7 py-2.5 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 font-bold shadow-md"
-          >
+          <button onClick={handleExport} disabled={loading} className="btn btn-orange">
             <Download size={15} />
             {loading ? "저장 중..." : savedPath ? "다른 이름으로 저장" : "저장"}
           </button>
-          <button
-            onClick={onClose}
-            className="flex items-center gap-2 px-5 py-2.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-red-50 hover:border-red-300 hover:text-red-600 font-medium"
-          >
+          <button onClick={onClose} className="btn btn-gray">
             <X size={15} /> 닫기
           </button>
         </div>

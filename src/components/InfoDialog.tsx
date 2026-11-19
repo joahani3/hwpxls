@@ -2,7 +2,7 @@ import { X, Download, Mail, FileText } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 
-const APP_VERSION = "0.1.0";
+const APP_VERSION = "1.0.1";
 
 interface Props {
   onClose: () => void;
@@ -80,10 +80,7 @@ export function InfoDialog({ onClose }: Props) {
 
         {/* 푸터 — 로그 다운로드 */}
         <div className="px-5 pb-4">
-          <button
-            onClick={downloadLog}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-medium transition-colors"
-          >
+          <button onClick={downloadLog} className="btn btn-gray w-full">
             <Download size={13} /> 오류 로그 다운로드
           </button>
         </div>

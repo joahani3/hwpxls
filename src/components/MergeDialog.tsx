@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { ExcelCell } from "../types";
 
 interface Props {
@@ -13,9 +14,14 @@ export function MergeDialog({ hwpText, excelCell, onConfirm, onCancel }: Props) 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4">
-        <h3 className="text-base font-semibold text-gray-900 mb-3">
-          {isMerged ? "병합 셀 매핑 확인" : "매핑 확인"}
-        </h3>
+        <div className="flex items-center mb-3">
+          <h3 className="text-base font-semibold text-gray-900">
+            {isMerged ? "병합 셀 매핑 확인" : "매핑 확인"}
+          </h3>
+          <button onClick={onCancel} className="ml-auto text-gray-400 hover:text-gray-600 p-0.5 rounded hover:bg-gray-100 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
 
         <div className="space-y-3 mb-5">
           <div className="bg-blue-50 rounded-lg p-3 text-sm">
@@ -41,18 +47,8 @@ export function MergeDialog({ hwpText, excelCell, onConfirm, onCancel }: Props) 
         </div>
 
         <div className="flex gap-2 justify-end">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-          >
-            취소
-          </button>
-          <button
-            onClick={onConfirm}
-            className="px-4 py-2 text-sm text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors"
-          >
-            매핑 추가
-          </button>
+          <button onClick={onCancel} className="btn btn-gray">취소</button>
+          <button onClick={onConfirm} className="btn btn-blue">매핑 추가</button>
         </div>
       </div>
     </div>

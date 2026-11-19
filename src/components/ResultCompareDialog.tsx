@@ -80,15 +80,13 @@ export function ResultCompareDialog({ hwpTables, mappings, outputPath, changeLog
     return (
       <div className="fixed inset-0 z-50 flex flex-col bg-white">
         <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-900 text-white shrink-0">
-          <button onClick={() => setShowChangeLog(false)}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-gray-300 hover:text-white hover:bg-white/10 rounded transition-colors">
+          <button onClick={() => setShowChangeLog(false)} className="btn btn-gray">
             <ArrowLeft size={13} /> 비교 화면으로
           </button>
           <ClipboardList size={14} className="text-yellow-400 ml-2" />
           <span className="text-xs font-semibold">작업 결과 — 변경 내역</span>
           <span className="ml-auto text-[11px] text-gray-400">{changeLog.length}건</span>
-          <button onClick={onClose}
-            className="flex items-center gap-1.5 ml-2 px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors font-medium">
+          <button onClick={onClose} className="btn btn-red ml-2">
             <X size={12} /> 모두 닫기
           </button>
         </div>
@@ -137,10 +135,7 @@ export function ResultCompareDialog({ hwpTables, mappings, outputPath, changeLog
         <span className="text-xs font-semibold truncate flex-1 min-w-0" title={outputPath}>{fileName}</span>
 
         {/* 작업 결과 보기 */}
-        <button
-          onClick={() => setShowChangeLog(true)}
-          className="flex items-center gap-1.5 px-3 py-1 text-xs rounded transition-colors font-medium border border-yellow-500/50 text-yellow-300 hover:bg-yellow-500/20"
-        >
+        <button onClick={() => setShowChangeLog(true)} className="btn btn-amber">
           <ClipboardList size={13} />
           작업 결과 보기
           {changeLog.length > 0 && (
@@ -149,18 +144,12 @@ export function ResultCompareDialog({ hwpTables, mappings, outputPath, changeLog
         </button>
 
         {/* 폴더 열기 */}
-        <button
-          onClick={() => openPath(outputPath.replace(/[/\\][^/\\]+$/, ""))}
-          className="flex items-center gap-1 px-2.5 py-1 text-[11px] text-gray-300 hover:text-white hover:bg-white/10 rounded transition-colors"
-        >
+        <button onClick={() => openPath(outputPath.replace(/[/\\][^/\\]+$/, ""))} className="btn btn-dark">
           <FolderOpen size={12} /> 폴더 열기
         </button>
 
         {/* 모두 닫기 */}
-        <button
-          onClick={onClose}
-          className="flex items-center gap-1.5 px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors font-medium"
-        >
+        <button onClick={onClose} className="btn btn-red">
           <X size={12} /> 모두 닫기
         </button>
       </div>
@@ -173,21 +162,12 @@ export function ResultCompareDialog({ hwpTables, mappings, outputPath, changeLog
           <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 border-b border-blue-100 shrink-0">
             <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wide">한글</span>
           </div>
-          <div className="flex gap-0 border-b-2 border-blue-200 overflow-x-auto shrink-0 bg-blue-50/40">
+          <div className="tab-bar shrink-0">
             {hwpTables.map((t, i) => (
               <button key={i} onClick={() => setActiveHwpTable(i)}
-                className={`px-4 py-1.5 text-xs font-semibold whitespace-nowrap transition-all border-b-2 -mb-[2px] ${
-                  i === activeHwpTable
-                    ? "bg-white text-blue-700 border-blue-500 shadow-sm"
-                    : "bg-transparent text-gray-500 border-transparent hover:text-blue-600 hover:bg-white/60"
-                }`}>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold ${
-                    i === activeHwpTable ? "bg-blue-500 text-white" : "bg-gray-200 text-gray-500"
-                  }`}>{i + 1}</span>
-                  표 {i + 1}
-                  <span className="text-[9px] font-normal opacity-70">({t.total_rows}×{t.total_cols})</span>
-                </span>
+                className={`tab-item${i === activeHwpTable ? " active" : ""}`}>
+                표 {i + 1}
+                <span style={{ fontSize: 9, fontWeight: 400, opacity: 0.7, marginLeft: 3 }}>({t.total_rows}×{t.total_cols})</span>
               </button>
             ))}
           </div>
@@ -266,12 +246,10 @@ export function ResultCompareDialog({ hwpTables, mappings, outputPath, changeLog
             return (
               <>
                 {dataSheets.length > 1 && (
-                  <div className="flex gap-1 p-2 border-b border-gray-200 overflow-x-auto shrink-0">
+                  <div className="tab-bar shrink-0">
                     {dataSheets.map((s, i) => (
                       <button key={i} onClick={() => setActiveSheet(i)}
-                        className={`px-3 py-1 rounded text-xs whitespace-nowrap transition-colors ${
-                          i === activeSheet ? "bg-green-500 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                        }`}>
+                        className={`tab-item${i === activeSheet ? " active" : ""}`}>
                         {s.name}
                       </button>
                     ))}

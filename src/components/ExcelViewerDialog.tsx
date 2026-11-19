@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openPath } from "@tauri-apps/plugin-shell";
-import { X, FolderOpen, FileSpreadsheet, ArrowRight } from "lucide-react";
+import { X, FolderOpen, FileSpreadsheet, ArrowRight, Check } from "lucide-react";
 import { ExcelTemplate } from "../types";
 
 interface Props {
@@ -95,65 +95,48 @@ export function ExcelViewerDialog({ path, onClose }: Props) {
       <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white shrink-0">
         <FileSpreadsheet size={15} className="text-green-400 shrink-0" />
         <span className="text-xs font-semibold truncate flex-1 min-w-0" title={path}>{fileName}</span>
-        <button
-          onClick={() => openPath(path.replace(/[/\\][^/\\]+$/, ""))}
-          className="flex items-center gap-1 px-2.5 py-1 text-[11px] text-gray-300 hover:text-white hover:bg-white/10 rounded transition-colors"
-        >
+        <button onClick={() => openPath(path.replace(/[/\\][^/\\]+$/, ""))} className="btn btn-dark">
           <FolderOpen size={12} /> 폴더 열기
         </button>
-        <button
-          onClick={onClose}
-          className="flex items-center gap-1.5 px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors font-medium"
-        >
+        <button onClick={onClose} className="btn btn-red">
           <X size={12} /> 닫기
         </button>
       </div>
 
       {/* 시트 탭 */}
       {template && (
-        <div className="flex gap-1 px-3 py-1.5 border-b border-gray-200 bg-gray-50 shrink-0 overflow-x-auto">
+        <div className="tab-bar shrink-0" style={{ alignItems: "flex-end" }}>
           {dataSheets.map((s, i) => (
             <button key={i} onClick={() => setActiveSheet(i)}
-              className={`px-3 py-1 rounded text-xs whitespace-nowrap transition-colors ${
-                i === activeSheet ? "bg-green-500 text-white" : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-100"
-              }`}>
+              className={`tab-item${i === activeSheet ? " active" : ""}`}>
               {s.name}
             </button>
           ))}
           {logSheet && (
             <button
               onClick={() => setActiveSheet(-1)}
-              className={`px-3 py-1 rounded text-xs whitespace-nowrap transition-colors ${
-                activeSheet === -1
-                  ? "bg-amber-500 text-white"
-                  : "bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100"
-              }`}>
+              className={`tab-item${activeSheet === -1 ? " active" : ""}`}>
               변경내역 {changeMap.size > 0 && `(${changeMap.size})`}
             </button>
           )}
+          {/* 토글 필 — 데이터 시트 볼 때만, 우측 정렬 */}
           {hasChanges && activeSheet >= 0 && (
-            <button
-              onClick={() => setChangedOnly(v => !v)}
-              className={`px-3 py-1 rounded text-xs whitespace-nowrap font-bold transition-colors ${
-                changedOnly
-                  ? "bg-amber-500 text-white"
-                  : "bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100"
-              }`}
-            >
-              변경내역만 보기
-            </button>
-          )}
-          {hasChanges && activeSheet >= 0 && (
-            <button
-              onClick={() => setShowOriginal(v => !v)}
-              className={`px-3 py-1 rounded text-xs whitespace-nowrap font-bold transition-colors ${
-                showOriginal
-                  ? "bg-pink-500 text-white"
-                  : "bg-pink-50 text-pink-700 border border-pink-300 hover:bg-pink-100"
-              }`}
-            >
-              원본데이터 함께표시
-            </button>
+            <div className="flex items-center gap-2 ml-auto pb-1.5">
+              <button
+                onClick={() => setChangedOnly(v => !v)}
+                className={`toggle-pill${changedOnly ? " active" : ""}`}
+              >
+                {changedOnly && <Check size={11} strokeWidth={3} />}
+                변경내역만 보기
+              </button>
+              <button
+                onClick={() => setShowOriginal(v => !v)}
+                className={`toggle-pill${showOriginal ? " active" : ""}`}
+              >
+                {showOriginal && <Check size={11} strokeWidth={3} />}
+                원본데이터 함께표시
+              </button>
+            </div>
           )}
         </div>
       )}

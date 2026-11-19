@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
-import { AlertCircle, Bug, Info, FileText, FileSpreadsheet, ClipboardList } from "lucide-react";
+import { AlertCircle, Bug, Info, FileText, FileSpreadsheet, ClipboardList, X } from "lucide-react";
 
 import {
   HwpTable,
@@ -33,10 +33,14 @@ export default function App() {
   const [hwpPath, setHwpPath] = useState<string | null>(null);
   const [hwpTables, setHwpTables] = useState<HwpTable[]>([]);
   const [activeHwpTable, setActiveHwpTable] = useState(0);
+  const [hwpHeaderRows, setHwpHeaderRows] = useState<number[] | null>(null);
+  const [showHwpHeaderGuide, setShowHwpHeaderGuide] = useState(false);
   const [selectedHwpCell, setSelectedHwpCell] = useState<SelectedHwpCell | null>(null);
 
   const [template, setTemplate] = useState<ExcelTemplate | null>(null);
   const [activeSheet, setActiveSheet] = useState(0);
+  const [excelHeaderRow, setExcelHeaderRow] = useState<number | null>(null);
+  const [showExcelHeaderGuide, setShowExcelHeaderGuide] = useState(false);
 
   const [mappings, setMappings] = useState<CellMapping[]>([]);
   const [pendingMapping, setPendingMapping] = useState<PendingMapping | null>(null);
@@ -50,12 +54,57 @@ export default function App() {
   const [viewExcelPath, setViewExcelPath] = useState<string | null>(null);
   // 자동 매핑을 이미 띄운 파일 조합 추적 (같은 조합 중복 팝업 방지)
   const autoMappingShownKey = useRef("");
+  // 헤더 행 미선택 안내
+  const [headerGuideNeeded, setHeaderGuideNeeded] = useState<{ hwp: boolean; excel: boolean } | null>(null);
+  const headerGuideRef = useRef(false);
+  useEffect(() => { headerGuideRef.current = !!headerGuideNeeded; }, [headerGuideNeeded]);
+  useEffect(() => {
+    if (!headerGuideRef.current) return;
+    const needHwp = !hwpHeaderRows || hwpHeaderRows.length === 0;
+    const needExcel = excelHeaderRow === null;
+    if (!needHwp && !needExcel) {
+      setHeaderGuideNeeded(null);
+      setShowAutoMapping(true);
+    } else {
+      setHeaderGuideNeeded({ hwp: needHwp, excel: needExcel });
+    }
+  }, [hwpHeaderRows, excelHeaderRow]);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("처리 중...");
   const [dragOver, setDragOver] = useState(false);
   const [dragFileType, setDragFileType] = useState<"hwp" | "xlsx" | "mixed" | null>(null);
+
+  // 엑셀 초기화
+  const resetExcel = useCallback(() => {
+    setTemplate(null);
+    setActiveSheet(0);
+    setExcelHeaderRow(null);
+    setShowExcelHeaderGuide(false);
+    setMappings([]);
+    setPendingMapping(null);
+    setError(null);
+  }, []);
+
+  // 전체 초기화
+  const resetAll = useCallback(() => {
+    setHwpPath(null);
+    setHwpTables([]);
+    setActiveHwpTable(0);
+    setHwpHeaderRows(null);
+    setShowHwpHeaderGuide(false);
+    setSelectedHwpCell(null);
+    setMappings([]);
+    setPendingMapping(null);
+    setShowAutoMapping(false);
+    setResultPath(null);
+    setResultChangeLog([]);
+    setError(null);
+    setExcelHeaderRow(null);
+    setShowExcelHeaderGuide(false);
+    autoMappingShownKey.current = "";
+  }, []);
 
   // 한글 파일 로드 (경로 직접)
   const loadHwpFile = useCallback(async (path: string) => {
@@ -71,18 +120,11 @@ export default function App() {
         t.cells.filter(c => c.text.trim()).length > tables[best].cells.filter(c => c.text.trim()).length ? i : best
       , 0);
       setActiveHwpTable(richestIdx);
+      setHwpHeaderRows(null);
+      setShowHwpHeaderGuide(true);
       setSelectedHwpCell(null);
       setMappings([]);
-      setTemplate((tmpl) => {
-        if (tmpl && tables.length > 0) {
-          const key = `${path}::${tmpl.path}`;
-          if (autoMappingShownKey.current !== key) {
-            autoMappingShownKey.current = key;
-            setTimeout(() => setShowAutoMapping(true), 100);
-          }
-        }
-        return tmpl;
-      });
+      setTemplate((tmpl) => tmpl);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -101,16 +143,9 @@ export default function App() {
       const tmpl = await invoke<ExcelTemplate>("read_excel_template", { path });
       setTemplate(tmpl);
       setActiveSheet(0);
-      setHwpPath((hwp) => {
-        if (hwp) {
-          const key = `${hwp}::${path}`;
-          if (autoMappingShownKey.current !== key) {
-            autoMappingShownKey.current = key;
-            setTimeout(() => setShowAutoMapping(true), 100);
-          }
-        }
-        return hwp;
-      });
+      setExcelHeaderRow(null);
+      setShowExcelHeaderGuide(true);
+      setHwpPath((hwp) => hwp);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -306,7 +341,6 @@ export default function App() {
           </span>
         )}
 
-
         {hwpPath && (
           <button
             onClick={async () => {
@@ -315,7 +349,7 @@ export default function App() {
                 setError(result);
               } catch (e) { setError(String(e)); }
             }}
-            className="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-400 hover:text-gray-600 border border-gray-200 rounded"
+            className="btn btn-gray"
             title="ZIP 구조 디버그"
           >
             <Bug size={12} /> 구조보기
@@ -325,7 +359,7 @@ export default function App() {
         {resultPath && (
           <button
             onClick={() => setShowResult(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-yellow-700 bg-yellow-50 border border-yellow-300 rounded hover:bg-yellow-100 transition-colors"
+            className="btn btn-amber"
             title={resultPath}
           >
             <ClipboardList size={13} /> 이전 작업 결과 보기
@@ -337,7 +371,7 @@ export default function App() {
             const selected = await open({ multiple: false, filters: [{ name: "Excel", extensions: ["xlsx", "xls"] }] });
             if (selected) setViewExcelPath(selected as string);
           }}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-green-700 bg-green-50 border border-green-300 rounded hover:bg-green-100 transition-colors"
+          className="btn btn-green"
           title="저장된 엑셀 결과 파일 열기"
         >
           <FileSpreadsheet size={13} /> 결과파일보기
@@ -360,7 +394,7 @@ export default function App() {
             <span className="text-xs text-red-600 font-medium">메시지</span>
             <button
               onClick={() => navigator.clipboard.writeText(error)}
-              className="ml-auto text-xs text-red-400 hover:text-red-600 border border-red-200 rounded px-2 py-0.5"
+              className="btn btn-gray ml-auto"
             >
               복사
             </button>
@@ -375,29 +409,55 @@ export default function App() {
       )}
 
       {/* 메인 패널 */}
-      <div className="flex flex-1 min-h-0 gap-0">
+      <div className="flex flex-1 min-h-0 gap-0 relative">
         {/* 한글 표 패널 */}
-        <div className="flex flex-col w-1/2 border-r border-gray-200 min-h-0">
-          <div className="bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1.5 border-b border-blue-100 shrink-0">
-            한글 표
+        <div className="flex flex-col w-1/2 border-r border-gray-200 min-h-0 transition-shadow"
+          style={headerGuideNeeded?.hwp ? { boxShadow: "inset 0 0 0 3px #f59e0b" } : {}}>
+          <div className="flex items-center bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1.5 border-b border-blue-100 shrink-0">
+            <span>한글 표</span>
+            <div className="flex-1" />
+            {hwpPath && (
+              <button
+                onClick={resetAll}
+                className="btn btn-orange"
+                style={{ height: "23px", fontSize: "11px", padding: "0 8px" }}
+                title="한글·매핑 초기화 후 다시 업로드"
+              >
+                초기화
+              </button>
+            )}
           </div>
           <div className="flex-1 min-h-0 overflow-hidden">
             <HwpTableView
               tables={hwpTables}
               activeTableIdx={activeHwpTable}
-              onTableChange={setActiveHwpTable}
+              onTableChange={(i) => { setActiveHwpTable(i); setHwpHeaderRows(null); }}
               selectedCell={selectedHwpCell}
               onCellClick={handleHwpCellClick}
               mappings={mappings}
               onOpen={openHwpFile}
+              headerRows={hwpHeaderRows}
+              onHeaderRowsSelect={setHwpHeaderRows}
             />
           </div>
         </div>
 
         {/* 엑셀 템플릿 패널 */}
-        <div className="flex flex-col w-1/2 min-h-0">
-          <div className="bg-green-50 text-green-700 text-xs font-semibold px-3 py-1.5 border-b border-green-100 shrink-0">
-            엑셀 템플릿
+        <div className="flex flex-col w-1/2 min-h-0 transition-shadow"
+          style={headerGuideNeeded?.excel ? { boxShadow: "inset 0 0 0 3px #16a34a" } : {}}>
+          <div className="flex items-center bg-green-50 text-green-700 text-xs font-semibold px-3 py-1.5 border-b border-green-100 shrink-0">
+            <span>엑셀 템플릿</span>
+            <div className="flex-1" />
+            {template && (
+              <button
+                onClick={resetExcel}
+                className="btn btn-orange"
+                style={{ height: "23px", fontSize: "11px", padding: "0 8px" }}
+                title="엑셀 템플릿·매핑 초기화 후 다시 업로드"
+              >
+                초기화
+              </button>
+            )}
           </div>
           <div className="flex-1 min-h-0 overflow-hidden">
             <ExcelTemplateView
@@ -409,8 +469,18 @@ export default function App() {
               pendingHwpSelected={!!selectedHwpCell}
               onOpen={openExcelTemplate}
               onConvert={template ? () => setShowPreview(true) : undefined}
-              onAutoMap={hwpTables.length > 0 && template ? () => setShowAutoMapping(true) : undefined}
+              onAutoMap={hwpTables.length > 0 && template ? () => {
+                const needHwp = !hwpHeaderRows || hwpHeaderRows.length === 0;
+                const needExcel = excelHeaderRow === null;
+                if (needHwp || needExcel) {
+                  setHeaderGuideNeeded({ hwp: needHwp, excel: needExcel });
+                } else {
+                  setShowAutoMapping(true);
+                }
+              } : undefined}
               onReMap={hwpTables.length > 0 && template && mappings.length > 0 ? handleReMap : undefined}
+              headerRow={excelHeaderRow}
+              onHeaderRowSelect={setExcelHeaderRow}
               hwpLoaded={hwpTables.length > 0 && !!template}
               autoMapDone={(() => {
                 if (!template || hwpTables.length === 0 || mappings.length === 0) return false;
@@ -427,6 +497,48 @@ export default function App() {
             />
           </div>
         </div>
+
+        {/* 헤더 선택 안내 오버레이 */}
+        {headerGuideNeeded && (
+          <div className="absolute inset-0 pointer-events-none z-20 flex items-start justify-center pt-12">
+            <div
+              className="pointer-events-auto bg-white rounded-2xl shadow-2xl border-2 border-amber-400 p-5 w-[340px]"
+              style={{ animation: "guide-fadein 0.2s ease-out" }}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-lg">⚠️</span>
+                <span className="text-sm font-bold text-gray-800">헤더 행을 먼저 선택하세요</span>
+                <button
+                  onClick={() => setHeaderGuideNeeded(null)}
+                  className="ml-auto text-gray-300 hover:text-gray-500 leading-none text-xl"
+                >&times;</button>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">
+                표의 제목 행 번호를 클릭해 헤더로 지정한 뒤 버튼을 눌러주세요.
+              </p>
+              <div className="flex flex-col gap-2">
+                {headerGuideNeeded.hwp && (
+                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2.5">
+                    <span className="text-amber-500 font-bold text-lg" style={{ animation: "bounce-left 0.8s ease-in-out infinite" }}>←</span>
+                    <div>
+                      <div className="text-xs font-bold text-amber-800">한글 표 (왼쪽 패널)</div>
+                      <div className="text-[11px] text-amber-700">행 번호를 클릭해 헤더 행을 선택하세요</div>
+                    </div>
+                  </div>
+                )}
+                {headerGuideNeeded.excel && (
+                  <div className="flex items-center gap-2 bg-green-50 border border-green-300 rounded-lg px-3 py-2.5">
+                    <div>
+                      <div className="text-xs font-bold text-green-800">엑셀 템플릿 (오른쪽 패널)</div>
+                      <div className="text-[11px] text-green-700">행 번호를 클릭해 헤더 행을 선택하세요</div>
+                    </div>
+                    <span className="text-green-600 font-bold text-lg ml-auto" style={{ animation: "bounce-right 0.8s ease-in-out infinite" }}>→</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 매핑 패널 */}
@@ -473,6 +585,119 @@ export default function App() {
       {/* 앱 정보 다이얼로그 */}
       {showInfo && <InfoDialog onClose={() => setShowInfo(false)} />}
 
+      {/* 한글 헤더 행 선택 안내 팝업 */}
+      {showHwpHeaderGuide && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-[480px] p-6 flex flex-col gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-base font-bold text-gray-800">헤더 행을 선택해 주세요</span>
+              <button onClick={() => setShowHwpHeaderGuide(false)} className="ml-auto text-gray-400 hover:text-gray-600 p-0.5 rounded hover:bg-gray-100 transition-colors"><X size={16} /></button>
+            </div>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              한글 표에서 <strong>컬럼명(헤더)이 있는 행의 번호</strong>를 클릭하면 해당 행이 헤더로 지정됩니다.<br/>
+              병합된 셀이 있으면 함께 선택됩니다.
+            </p>
+            {/* 샘플 미리보기 */}
+            <div className="border border-gray-200 rounded-xl overflow-hidden text-xs">
+              <div className="bg-gray-100 text-gray-500 text-[10px] font-semibold px-3 py-1.5 border-b border-gray-200">예시</div>
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className="w-8 border border-gray-200 text-center text-[10px] text-gray-400 py-1">#</th>
+                    <th className="border border-gray-200 text-center text-[10px] text-gray-400 py-1">1열</th>
+                    <th className="border border-gray-200 text-center text-[10px] text-gray-400 py-1">2열</th>
+                    <th className="border border-gray-200 text-center text-[10px] text-gray-400 py-1">3열</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* 헤더 행 (선택됨 표시) */}
+                  <tr className="bg-blue-50 ring-2 ring-blue-400 ring-inset">
+                    <td className="border border-blue-300 text-center text-[10px] font-bold text-white bg-blue-400 py-1.5 cursor-row-resize">1</td>
+                    <td className="border border-blue-200 text-center text-[11px] font-semibold text-blue-800 py-1.5">성명</td>
+                    <td className="border border-blue-200 text-center text-[11px] font-semibold text-blue-800 py-1.5">부서</td>
+                    <td className="border border-blue-200 text-center text-[11px] font-semibold text-blue-800 py-1.5">직책</td>
+                  </tr>
+                  {/* 데이터 행들 */}
+                  <tr>
+                    <td className="border border-gray-200 text-center text-[10px] text-gray-400 py-1">2</td>
+                    <td className="border border-gray-200 text-center text-[11px] text-gray-600 py-1">홍길동</td>
+                    <td className="border border-gray-200 text-center text-[11px] text-gray-600 py-1">개발팀</td>
+                    <td className="border border-gray-200 text-center text-[11px] text-gray-600 py-1">팀장</td>
+                  </tr>
+                  <tr className="bg-gray-50/50">
+                    <td className="border border-gray-200 text-center text-[10px] text-gray-400 py-1">3</td>
+                    <td className="border border-gray-200 text-center text-[11px] text-gray-600 py-1">김철수</td>
+                    <td className="border border-gray-200 text-center text-[11px] text-gray-600 py-1">기획팀</td>
+                    <td className="border border-gray-200 text-center text-[11px] text-gray-600 py-1">대리</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div className="bg-amber-50 px-3 py-1.5 text-[10px] text-amber-700 border-t border-amber-100">
+                ↑ 행 번호(1)를 클릭하면 헤더 행으로 지정됩니다
+              </div>
+            </div>
+            <button
+              onClick={() => setShowHwpHeaderGuide(false)}
+              className="btn btn-blue w-full mt-1"
+            >
+              확인, 헤더 행 선택하기
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 엑셀 헤더 행 선택 안내 팝업 */}
+      {showExcelHeaderGuide && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-[480px] p-6 flex flex-col gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-base font-bold text-gray-800">엑셀 헤더 행을 선택해 주세요</span>
+              <button onClick={() => setShowExcelHeaderGuide(false)} className="ml-auto text-gray-400 hover:text-gray-600 p-0.5 rounded hover:bg-gray-100 transition-colors"><X size={16} /></button>
+            </div>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              엑셀 템플릿에서 <strong>컬럼명(헤더)이 있는 행의 번호</strong>를 클릭하면 헤더로 지정됩니다.<br/>
+              데이터는 헤더 행 아래부터 채워집니다.
+            </p>
+            <div className="border border-gray-200 rounded-xl overflow-hidden text-xs">
+              <div className="bg-gray-100 text-gray-500 text-[10px] font-semibold px-3 py-1.5 border-b border-gray-200">예시</div>
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className="w-8 border border-gray-200 text-center text-[10px] text-gray-400 py-1">#</th>
+                    <th className="border border-gray-200 text-center text-[10px] text-gray-400 py-1">A</th>
+                    <th className="border border-gray-200 text-center text-[10px] text-gray-400 py-1">B</th>
+                    <th className="border border-gray-200 text-center text-[10px] text-gray-400 py-1">C</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="bg-green-50 ring-2 ring-green-400 ring-inset">
+                    <td className="border border-green-300 text-center text-[10px] font-bold text-white bg-green-500 py-1.5 cursor-row-resize">1</td>
+                    <td className="border border-green-200 text-center text-[11px] font-semibold text-green-800 py-1.5">성명</td>
+                    <td className="border border-green-200 text-center text-[11px] font-semibold text-green-800 py-1.5">부서</td>
+                    <td className="border border-green-200 text-center text-[11px] font-semibold text-green-800 py-1.5">직책</td>
+                  </tr>
+                  <tr>
+                    <td className="border border-gray-200 text-center text-[10px] text-gray-400 py-1">2</td>
+                    <td className="border border-gray-200 text-center text-[11px] text-gray-400 py-1 italic">(데이터)</td>
+                    <td className="border border-gray-200 text-center text-[11px] text-gray-400 py-1 italic">(데이터)</td>
+                    <td className="border border-gray-200 text-center text-[11px] text-gray-400 py-1 italic">(데이터)</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div className="bg-amber-50 px-3 py-1.5 text-[10px] text-amber-700 border-t border-amber-100">
+                ↑ 행 번호(1)를 클릭하면 헤더 행으로 지정됩니다
+              </div>
+            </div>
+            <button
+              onClick={() => setShowExcelHeaderGuide(false)}
+              className="btn btn-green w-full mt-1"
+            >
+              확인, 헤더 행 선택하기
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 자동 매핑 다이얼로그 */}
       {showAutoMapping && template && (
         <AutoMappingDialog
@@ -480,6 +705,8 @@ export default function App() {
           template={template}
           existingMappings={mappings}
           initialHwpTable={activeHwpTable}
+          initialHwpHeaderRow={hwpHeaderRows?.[0] ?? 0}
+          initialExcelHeaderRow={excelHeaderRow ?? 0}
           onApply={applyAutoMappings}
           onClose={() => setShowAutoMapping(false)}
         />

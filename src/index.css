@@ -93,6 +93,148 @@ body {
   min-width: 32px;
 }
 
+/* ── 탭 시스템 ── */
+.tab-bar {
+  display: flex;
+  gap: 3px;
+  padding: 6px 10px 0;
+  background: #e2e6ed;
+  border-bottom: 1.5px solid #c8cdd8;
+  overflow-x: auto;
+  shrink: 0;
+}
+.tab-item {
+  position: relative;
+  bottom: -1.5px;
+  padding: 5px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 5px 5px 0 0;
+  border: 1.5px solid transparent;
+  border-bottom: none;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  color: #64748b;
+  background: #bec9db;
+  white-space: nowrap;
+  user-select: none;
+}
+.tab-item.active {
+  background: #3b6fd4;
+  color: #ffffff;
+  border-color: #2d5cb8;
+  border-bottom-color: #3b6fd4;
+  box-shadow: 0 -2px 0 0 #60a5fa inset;
+}
+.tab-item:not(.active):hover {
+  background: #aab8cc;
+  color: #334155;
+}
+
+/* ── 토글 필 ── */
+.toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1.5px solid #d1d5db;
+  background: #ffffff;
+  color: #64748b;
+  cursor: pointer;
+  transition: border-color 0.1s, color 0.1s, background 0.1s;
+  white-space: nowrap;
+  user-select: none;
+}
+.toggle-pill:hover {
+  border-color: #93c5fd;
+  color: #3b82f6;
+}
+.toggle-pill.active {
+  border-color: #3b82f6;
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+/* ── 3D 버튼 시스템 ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 18px;
+  height: 38px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.1s ease;
+  user-select: none;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn:active:not(:disabled) { transform: translateY(4px); }
+
+.btn-sm { height: 30px; padding: 0 12px; font-size: 12px; font-weight: 600; }
+.btn-lg { height: 44px; padding: 0 24px; font-size: 15px; }
+.btn-xs { height: 24px; padding: 0 8px; font-size: 11px; font-weight: 600; }
+
+.btn-green  { background: #3A9D3A; box-shadow: 0 5px 0 #256825; }
+.btn-green:hover:not(:disabled)  { filter: brightness(1.1); }
+.btn-green:active:not(:disabled) { box-shadow: 0 1px 0 #256825; }
+
+.btn-yellow { background: #E0A800; box-shadow: 0 5px 0 #9A7000; }
+.btn-yellow:hover:not(:disabled)  { filter: brightness(1.1); }
+.btn-yellow:active:not(:disabled) { box-shadow: 0 1px 0 #9A7000; }
+
+.btn-red    { background: #E53935; box-shadow: 0 5px 0 #9B1B18; }
+.btn-red:hover:not(:disabled)    { filter: brightness(1.1); }
+.btn-red:active:not(:disabled)   { box-shadow: 0 1px 0 #9B1B18; }
+
+.btn-blue   { background: #2563EB; box-shadow: 0 5px 0 #1A44A8; }
+.btn-blue:hover:not(:disabled)   { filter: brightness(1.1); }
+.btn-blue:active:not(:disabled)  { box-shadow: 0 1px 0 #1A44A8; }
+
+.btn-purple { background: #7C3AED; box-shadow: 0 5px 0 #4E1FA8; }
+.btn-purple:hover:not(:disabled) { filter: brightness(1.1); }
+.btn-purple:active:not(:disabled){ box-shadow: 0 1px 0 #4E1FA8; }
+
+.btn-gray   { background: #6B7280; box-shadow: 0 5px 0 #374151; }
+.btn-gray:hover:not(:disabled)   { filter: brightness(1.1); }
+.btn-gray:active:not(:disabled)  { box-shadow: 0 1px 0 #374151; }
+
+.btn-orange { background: #EA580C; box-shadow: 0 5px 0 #9A3412; }
+.btn-orange:hover:not(:disabled) { filter: brightness(1.1); }
+.btn-orange:active:not(:disabled){ box-shadow: 0 1px 0 #9A3412; }
+
+.btn-amber  { background: #D97706; box-shadow: 0 5px 0 #92400E; }
+.btn-amber:hover:not(:disabled)  { filter: brightness(1.1); }
+.btn-amber:active:not(:disabled) { box-shadow: 0 1px 0 #92400E; }
+
+.btn-dark   { background: #374151; box-shadow: 0 5px 0 #111827; }
+.btn-dark:hover:not(:disabled)   { filter: brightness(1.15); }
+.btn-dark:active:not(:disabled)  { box-shadow: 0 1px 0 #111827; }
+
+@keyframes guide-fadein {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes bounce-left {
+  0%, 100% { transform: translateX(0); }
+  50%       { transform: translateX(-5px); }
+}
+@keyframes bounce-right {
+  0%, 100% { transform: translateX(0); }
+  50%       { transform: translateX(5px); }
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;

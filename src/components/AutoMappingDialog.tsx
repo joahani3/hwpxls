@@ -1,5 +1,5 @@
-import { useState, useRef, useLayoutEffect, useEffect, useCallback } from "react";
-import { Sparkles, Check, X, ChevronDown, Zap } from "lucide-react";
+import { useState, useRef, useLayoutEffect, useEffect, useCallback, useMemo } from "react";
+import { Sparkles, Check, X, Zap } from "lucide-react";
 import { HwpTable, ExcelTemplate, ExcelCell, CellMapping } from "../types";
 import { mappingColor } from "../mappingColors";
 
@@ -18,6 +18,8 @@ interface Props {
   template: ExcelTemplate;
   existingMappings?: CellMapping[];
   initialHwpTable?: number;
+  initialHwpHeaderRow?: number;
+  initialExcelHeaderRow?: number;
   onApply: (mappings: CellMapping[]) => void;
   onClose: () => void;
 }
@@ -26,15 +28,24 @@ function normalize(text: string): string {
   return text.trim().replace(/\s+/g, "").toLowerCase();
 }
 
-export function AutoMappingDialog({ hwpTables, template, initialHwpTable, onApply, onClose }: Props) {
-  const [selHwpTable, setSelHwpTable] = useState(initialHwpTable ?? 0);
-  const [hwpHeaderRows, setHwpHeaderRows] = useState<number[]>([0]); // 0-based 선택 행 인덱스
-  const [selExcelSheet, setSelExcelSheet] = useState(0);
-  const [headerRows, setHeaderRows] = useState<number[]>([0]); // 0-based 선택 행 인덱스
+export function AutoMappingDialog({ hwpTables, template, initialHwpTable, initialHwpHeaderRow, initialExcelHeaderRow, onApply, onClose }: Props) {
+  const selHwpTable = initialHwpTable ?? 0;
+  const hwpHeaderRows = useMemo(() => [initialHwpHeaderRow ?? 0], [initialHwpHeaderRow]);
+  const selExcelSheet = 0;
+  const headerRows = useMemo(() => [initialExcelHeaderRow ?? 0], [initialExcelHeaderRow]);
 
   // 현재 선택된 HWP 셀 (행·열 모두 추적)
   const [activeHwpCell, setActiveHwpCell] = useState<{ row: number; col: number } | null>(null);
   const [pairs, setPairs] = useState<Pair[]>([]);
+
+  // 팝업 오픈 시 안내문구 2초 깜빡임 → 이후 버튼 깜빡임
+  const [blinkNotice, setBlinkNotice] = useState(true);
+  const [blinkBtn, setBlinkBtn] = useState(false);
+  useEffect(() => {
+    const t1 = setTimeout(() => { setBlinkNotice(false); setBlinkBtn(true); }, 5000);
+    const t2 = setTimeout(() => { setBlinkBtn(false); }, 15000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
 
   const table = hwpTables[selHwpTable];
   const sheet = template.sheets[selExcelSheet];
@@ -134,10 +145,12 @@ export function AutoMappingDialog({ hwpTables, template, initialHwpTable, onAppl
     setPairs(newPairs);
   };
 
-  const handleApply = () => {
+  const [showCrossWarning, setShowCrossWarning] = useState(false);
+
+  const doApply = () => {
     const mappings: CellMapping[] = pairs.map((p) => ({
       hwp_table_idx: selHwpTable,
-      hwp_row: p.hwpRow,   // 실제 행 사용
+      hwp_row: p.hwpRow,
       hwp_col: p.hwpCol,
       excel_sheet: selExcelSheet,
       excel_row: p.excelRow,
@@ -146,20 +159,39 @@ export function AutoMappingDialog({ hwpTables, template, initialHwpTable, onAppl
     onApply(mappings);
   };
 
-  const changeTable  = (idx: number) => { setSelHwpTable(idx); setHwpHeaderRows([0]); setPairs([]); setActiveHwpCell(null); };
-  const changeSheet  = (idx: number) => { setSelExcelSheet(idx); setHeaderRows([0]); setPairs([]); setActiveHwpCell(null); };
+  const handleApply = () => {
+    // 크로스 매핑이 있으면 경고 먼저
+    if (crossingHwpKeys.size > 0) {
+      setShowCrossWarning(true);
+    } else {
+      doApply();
+    }
+  };
 
-  // 행 선택: 단일 선택 (같은 행 클릭해도 유지)
-  const toggleHwpRow = (rowIdx: number) => {
-    setHwpHeaderRows([rowIdx]);
-    setPairs([]);
-    setActiveHwpCell(null);
-  };
-  const toggleExcelRow = (rowIdx: number) => {
-    setHeaderRows([rowIdx]);
-    setPairs([]);
-    setActiveHwpCell(null);
-  };
+
+  // 크로스 매핑 계산 (화살표가 교차하는 쌍)
+  const { crossingHwpKeys, crossingExcelKeys, crossingPairs } = useMemo(() => {
+    const hwpKeys = new Set<string>();
+    const excelKeys = new Set<string>();
+    const crossed: Array<{ hwpText: string; hwpCol: number; excelText: string; excelCol: number; excelAddress: string }> = [];
+    for (let i = 0; i < pairs.length; i++) {
+      for (let j = i + 1; j < pairs.length; j++) {
+        const p1 = pairs[i], p2 = pairs[j];
+        if ((p1.hwpCol - p2.hwpCol) * (p1.excelCol - p2.excelCol) < 0) {
+          hwpKeys.add(`${p1.hwpRow}:${p1.hwpCol}`);
+          hwpKeys.add(`${p2.hwpRow}:${p2.hwpCol}`);
+          excelKeys.add(`${p1.excelRow}:${p1.excelCol}`);
+          excelKeys.add(`${p2.excelRow}:${p2.excelCol}`);
+          if (!crossed.some(c => c.hwpCol === p1.hwpCol))
+            crossed.push({ hwpText: p1.hwpText, hwpCol: p1.hwpCol, excelText: p1.excelText, excelCol: p1.excelCol, excelAddress: p1.excelAddress });
+          if (!crossed.some(c => c.hwpCol === p2.hwpCol))
+            crossed.push({ hwpText: p2.hwpText, hwpCol: p2.hwpCol, excelText: p2.excelText, excelCol: p2.excelCol, excelAddress: p2.excelAddress });
+        }
+      }
+    }
+    return { crossingHwpKeys: hwpKeys, crossingExcelKeys: excelKeys, crossingPairs: crossed };
+  }, [pairs]);
+
 
   const isHwpActive = (row: number, col: number) =>
     activeHwpCell?.row === row && activeHwpCell?.col === col;
@@ -200,22 +232,23 @@ export function AutoMappingDialog({ hwpTables, template, initialHwpTable, onAppl
     return () => { scrollEls.forEach(el => el.removeEventListener("scroll", recalcArrows)); };
   }, [recalcArrows]);
 
-  // 교차 감지: hwpCol 순서와 excelCol 순서가 반전된 쌍
-  const crossingHwpKeys = new Set<string>();
-  const crossingExcelKeys = new Set<string>();
-  for (let i = 0; i < pairs.length; i++) {
-    for (let j = i + 1; j < pairs.length; j++) {
-      const p1 = pairs[i], p2 = pairs[j];
-      if ((p1.hwpCol - p2.hwpCol) * (p1.excelCol - p2.excelCol) < 0) {
-        crossingHwpKeys.add(`${p1.hwpRow}:${p1.hwpCol}`);
-        crossingHwpKeys.add(`${p2.hwpRow}:${p2.hwpCol}`);
-        crossingExcelKeys.add(`${p1.excelRow}:${p1.excelCol}`);
-        crossingExcelKeys.add(`${p2.excelRow}:${p2.excelCol}`);
-      }
-    }
-  }
 
   return (
+    <>
+    <style>{`
+      @keyframes blink-attention {
+        0%, 100% { transform: scale(1); box-shadow: 0 4px 20px rgba(124,58,237,0.4); }
+        50% { transform: scale(1.07); box-shadow: 0 0 0 5px rgba(124,58,237,0.35), 0 6px 28px rgba(124,58,237,0.7); background-color: #7c3aed; }
+      }
+      @keyframes blink-notice {
+        0%, 100% { background: #fffbeb; border-color: #fcd34d; }
+        50% { background: #fef2f2; border-color: #f87171; }
+      }
+      @keyframes blink-urgent {
+        0%, 49% { color: #dc2626; text-decoration: underline; opacity: 1; }
+        50%, 100% { color: #dc2626; text-decoration: underline; opacity: 0.15; }
+      }
+    `}</style>
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl shadow-2xl w-[860px] max-h-[90vh] flex flex-col">
 
@@ -223,49 +256,31 @@ export function AutoMappingDialog({ hwpTables, template, initialHwpTable, onAppl
         <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-100 shrink-0">
           <Sparkles size={14} className="text-purple-500" />
           <h2 className="text-sm font-bold text-gray-800">자동 매핑 설정</h2>
-          <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-600">
-            <X size={15} />
+          <div className="flex-1" />
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-0.5 rounded hover:bg-gray-100 transition-colors">
+            <X size={16} />
           </button>
         </div>
 
+        {/* 안내 문구 */}
+        <div
+          className="shrink-0 flex items-start gap-2 px-5 py-3 border-b border-amber-200"
+          style={blinkNotice ? { animation: "blink-notice 0.6s ease-in-out infinite" } : { background: "#fffbeb" }}
+        >
+          <span className="text-amber-500 mt-0.5 shrink-0 text-base">⚠</span>
+          <p className="text-sm text-amber-800 leading-relaxed">
+            <strong>'텍스트 자동매핑'</strong>하신 뒤 한글과 엑셀 데이터가 매핑되는게 맞는지{" "}
+            <span
+              style={blinkNotice
+                ? { animation: "blink-urgent 0.5s step-end infinite", color: "#dc2626", textDecoration: "underline", fontWeight: 800 }
+                : { color: "#dc2626", textDecoration: "underline", fontWeight: 800 }
+              }
+            >꼭 확인하셔야합니다.</span>
+            {" "}수정할 부분이 필요하면, 해당 항목을 선택해서 변경하세요.
+          </p>
+        </div>
+
         <div className="flex-1 overflow-y-auto">
-          {/* ── 소스 설정 (한글 표 + 헤더 행 수만) ── */}
-          <div className="px-5 pt-4 pb-3 border-b border-gray-100 flex items-end gap-3">
-            {/* HWP 표 */}
-            <div className="flex-1 min-w-[140px]">
-              <label className="text-[10px] text-gray-500 mb-1 block font-medium uppercase tracking-wide">한글 표</label>
-              <div className="relative">
-                <select
-                  value={selHwpTable}
-                  onChange={(e) => changeTable(Number(e.target.value))}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 pr-7 bg-white appearance-none focus:outline-none focus:border-blue-400"
-                >
-                  {hwpTables.map((t, i) => (
-                    <option key={i} value={i}>표 {i + 1} ({t.total_rows}행 × {t.total_cols}열)</option>
-                  ))}
-                </select>
-                <ChevronDown size={11} className="absolute right-2 top-2 text-gray-400 pointer-events-none" />
-              </div>
-            </div>
-
-            {/* HWP 헤더 행 선택 (토글) */}
-            <div>
-              <label className="text-[10px] text-gray-500 mb-1 block font-medium uppercase tracking-wide">한글 헤더 행</label>
-              <div className="flex flex-wrap gap-1 max-w-[160px]">
-                {Array.from({ length: Math.min(Math.max(5, (table?.total_rows ?? 1)), 10) }, (_, i) => i).map((rowIdx) => (
-                  <button key={rowIdx}
-                    onClick={() => toggleHwpRow(rowIdx)}
-                    className={`w-8 h-7 text-xs rounded border font-medium transition-colors ${
-                      hwpHeaderRows.includes(rowIdx)
-                        ? "bg-blue-500 text-white border-blue-500"
-                        : "bg-white text-gray-600 border-gray-200 hover:border-blue-400"
-                    }`}
-                  >{rowIdx + 1}</button>
-                ))}
-              </div>
-            </div>
-          </div>
-
           {/* ── 헤더 선택 패널 (위: 한글 / 아래: 엑셀) ── */}
           <div className="flex flex-col border-b border-gray-100 relative" ref={panelsRef}>
             {/* SVG 화살표 오버레이 */}
@@ -290,9 +305,14 @@ export function AutoMappingDialog({ hwpTables, template, initialHwpTable, onAppl
 
             {/* 위: HWP 헤더 그리드 */}
             <div className="p-3 border-b border-gray-100">
-              <p className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide mb-2">
+              <p className="flex items-center gap-1.5 text-sm font-bold text-blue-700 mb-2">
+                {/* 한글 아이콘 */}
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="18" height="18" rx="3" fill="#1A5EBF"/>
+                  <text x="9" y="13.5" textAnchor="middle" fontSize="11" fontWeight="bold" fill="white" fontFamily="serif">한</text>
+                </svg>
                 한글 헤더
-                <span className="ml-1 normal-case font-normal text-gray-400">— 셀 클릭해서 선택</span>
+                <span className="ml-0.5 text-xs font-normal text-gray-400">— 셀 클릭해서 선택</span>
               </p>
               {hwpHeaders.length === 0 ? (
                 <p className="text-xs text-gray-400">헤더 셀 없음</p>
@@ -378,8 +398,9 @@ export function AutoMappingDialog({ hwpTables, template, initialHwpTable, onAppl
             {/* 가운데: 자동 매칭 버튼 */}
             <div className="flex items-center justify-center py-3 border-b border-gray-100 bg-purple-50/50">
               <button
-                onClick={autoMatch}
-                className="flex items-center gap-3 px-6 py-2.5 rounded-xl bg-purple-600 text-white hover:bg-purple-700 active:scale-95 transition-all shadow-md shadow-purple-200"
+                onClick={() => { setBlinkBtn(false); autoMatch(); }}
+                className="btn btn-purple"
+                style={blinkBtn ? { animation: "blink-attention 0.55s ease-in-out infinite" } : undefined}
               >
                 <Zap size={20} className="fill-yellow-300 stroke-white" />
                 <span className="text-sm font-bold tracking-wide">텍스트 자동매칭</span>
@@ -389,11 +410,16 @@ export function AutoMappingDialog({ hwpTables, template, initialHwpTable, onAppl
 
             {/* 아래: 엑셀 헤더 그리드 */}
             <div className="p-3">
-              <p className="text-[10px] font-semibold text-green-600 uppercase tracking-wide mb-2">
+              <p className="flex items-center gap-1.5 text-sm font-bold text-green-700 mb-2">
+                {/* 엑셀 아이콘 */}
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="18" height="18" rx="3" fill="#217346"/>
+                  <text x="9" y="13.5" textAnchor="middle" fontSize="11" fontWeight="bold" fill="white" fontFamily="sans-serif">X</text>
+                </svg>
                 엑셀 헤더
                 {activeHwpCell
-                  ? <span className="ml-1 text-blue-500 normal-case font-normal">— 짝지을 셀 클릭</span>
-                  : <span className="ml-1 normal-case font-normal text-gray-400">— 한글 선택 후 클릭</span>
+                  ? <span className="ml-0.5 text-xs text-blue-500 font-normal">— 짝지을 셀 클릭</span>
+                  : <span className="ml-0.5 text-xs font-normal text-gray-400">— 한글 선택 후 클릭</span>
                 }
               </p>
               {(() => {
@@ -482,39 +508,6 @@ export function AutoMappingDialog({ hwpTables, template, initialHwpTable, onAppl
                 );
               })()}
 
-              {/* 엑셀 시트 + 헤더 행 수 (그리드 아래) */}
-              <div className="flex items-end gap-3 mt-3 pt-3 border-t border-gray-100">
-                <div className="flex-1 min-w-[140px]">
-                  <label className="text-[10px] text-gray-500 mb-1 block font-medium uppercase tracking-wide">엑셀 시트</label>
-                  <div className="relative">
-                    <select
-                      value={selExcelSheet}
-                      onChange={(e) => changeSheet(Number(e.target.value))}
-                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 pr-7 bg-white appearance-none focus:outline-none focus:border-green-400"
-                    >
-                      {template.sheets.map((s, i) => (
-                        <option key={i} value={i}>{i + 1}. {s.name}</option>
-                      ))}
-                    </select>
-                    <ChevronDown size={11} className="absolute right-2 top-2 text-gray-400 pointer-events-none" />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[10px] text-gray-500 mb-1 block font-medium uppercase tracking-wide">엑셀 헤더 행</label>
-                  <div className="flex flex-wrap gap-1 max-w-[200px]">
-                    {Array.from({ length: Math.min(Math.max(8, (sheet?.max_row ?? 1)), 15) }, (_, i) => i).map((rowIdx) => (
-                      <button key={rowIdx}
-                        onClick={() => toggleExcelRow(rowIdx)}
-                        className={`w-8 h-7 text-xs rounded border font-medium transition-colors ${
-                          headerRows.includes(rowIdx)
-                            ? "bg-green-500 text-white border-green-500"
-                            : "bg-white text-gray-600 border-gray-200 hover:border-green-400"
-                        }`}
-                      >{rowIdx + 1}</button>
-                    ))}
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -526,18 +519,178 @@ export function AutoMappingDialog({ hwpTables, template, initialHwpTable, onAppl
             {pairs.length > 0 ? `${pairs.length}개 매핑됨` : "한글 셀 선택 → 엑셀 셀 클릭으로 매핑"}
           </span>
           <div className="flex-1" />
-          <button onClick={onClose} className="flex items-center gap-1 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
-            <X size={12} /> 닫기
-          </button>
-          <button
-            onClick={handleApply}
-            disabled={pairs.length === 0}
-            className="flex items-center gap-1.5 px-4 py-1.5 text-xs bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-40 font-medium"
-          >
-            <Check size={12} /> {pairs.length}개 적용
+          <button onClick={onClose} className="btn btn-gray"><X size={13} /> 닫기</button>
+          <button onClick={handleApply} disabled={pairs.length === 0} className="btn btn-purple">
+            <Check size={15} /> {pairs.length}개 적용
           </button>
         </div>
       </div>
     </div>
+
+    {/* 크로스 매핑 경고 다이얼로그 */}
+    {showCrossWarning && (() => {
+      // 위: hwpCol 순, 아래: excelCol 순
+      const topItems = [...crossingPairs].sort((a, b) => a.hwpCol - b.hwpCol);
+      const botItems = [...crossingPairs].sort((a, b) => a.excelCol - b.excelCol);
+      const n = crossingPairs.length;
+      const ITEM_W = Math.max(100, Math.min(140, Math.floor(460 / n)));
+      const totalW = n * ITEM_W;
+      const SVG_H = 80;
+
+      // 각 pair: 위 인덱스 (hwpCol 순) → 아래 인덱스 (excelCol 순)
+      const lines = topItems.map((item, ti) => {
+        const bi = botItems.findIndex(x => x.excelCol === item.excelCol);
+        // 교차 여부: 다른 선과 x 순서가 반전되면 crossing
+        const isCross = topItems.some((other, oti) => {
+          if (oti === ti) return false;
+          const obi = botItems.findIndex(x => x.excelCol === other.excelCol);
+          return (ti - oti) * (bi - obi) < 0;
+        });
+        return { item, ti, bi, isCross };
+      });
+
+      // 교차점 좌표 (두 선의 교점)
+      const crossPoints: Array<{ cx: number; cy: number }> = [];
+      for (let a = 0; a < lines.length; a++) {
+        for (let b = a + 1; b < lines.length; b++) {
+          const la = lines[a], lb = lines[b];
+          if (!la.isCross && !lb.isCross) continue;
+          const x1 = la.ti * ITEM_W + ITEM_W / 2, x2 = la.bi * ITEM_W + ITEM_W / 2;
+          const x3 = lb.ti * ITEM_W + ITEM_W / 2, x4 = lb.bi * ITEM_W + ITEM_W / 2;
+          // 직선 (x1,0)→(x2,SVG_H) 와 (x3,0)→(x4,SVG_H) 의 교점
+          const denom = (x1 - x2) - (x3 - x4);
+          if (Math.abs(denom) < 0.001) continue;
+          const t = (x3 - x1) / denom;
+          if (t > 0 && t < 1) {
+            crossPoints.push({ cx: x1 + (x2 - x1) * t, cy: t * SVG_H });
+          }
+        }
+      }
+
+      return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            style={{ width: Math.max(400, totalW + 80) }}>
+
+            {/* 헤더 */}
+            <div className="flex items-center gap-2 px-5 py-3.5 bg-pink-50 border-b border-pink-100">
+              <span className="text-pink-500 text-base">⚠</span>
+              <span className="text-sm font-bold text-pink-800">교차 매핑(크로스)이 감지됐습니다</span>
+              <div className="flex-1" />
+              <button onClick={() => setShowCrossWarning(false)} className="text-gray-400 hover:text-gray-600 p-0.5 rounded hover:bg-gray-100">
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* 안내 */}
+            <p className="text-xs text-gray-500 px-5 pt-3 pb-1 leading-relaxed">
+              한글과 엑셀의 연결 순서가 <strong className="text-pink-600">교차</strong>되어 있습니다.
+              아래 연결이 맞는지 확인하세요.
+            </p>
+
+            {/* 다이어그램 */}
+            <div className="px-5 py-3 flex flex-col items-center gap-0">
+
+              {/* 한글 헤더 레이블 */}
+              <div className="flex items-center gap-1.5 mb-1.5" style={{ width: totalW }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", textTransform: "uppercase", letterSpacing: "0.05em" }}>한글 헤더</span>
+                <div style={{ flex: 1, height: 1, background: "#bfdbfe" }} />
+              </div>
+
+              {/* 위: 한글 헤더 행 */}
+              <div className="flex items-end" style={{ width: totalW }}>
+                {topItems.map((item, i) => (
+                  <div key={i} style={{ width: ITEM_W, display: "flex", justifyContent: "center", alignItems: "flex-end", padding: "0 4px" }}>
+                    <div style={{
+                      width: "100%", padding: "5px 6px", textAlign: "center",
+                      background: "#eff6ff", border: "2px solid #93c5fd", borderRadius: 8,
+                      fontSize: 11, fontWeight: 700, color: "#1d4ed8",
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      boxShadow: "0 1px 4px rgba(59,130,246,0.15)",
+                    }} title={item.hwpText}>
+                      {item.hwpText || "(빈)"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* 중간: SVG 화살표 */}
+              <svg width={totalW} height={SVG_H} style={{ display: "block", overflow: "visible" }}>
+                <defs>
+                  <marker id="arr-pink" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+                    <path d="M0,0 L0,7 L7,3.5 z" fill="#f43f5e"/>
+                  </marker>
+                  <marker id="arr-gray" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+                    <path d="M0,0 L0,7 L7,3.5 z" fill="#94a3b8"/>
+                  </marker>
+                </defs>
+
+                {/* 비교차 선 (뒤) */}
+                {lines.filter(l => !l.isCross).map(({ ti, bi }, idx) => (
+                  <line key={`nc-${idx}`}
+                    x1={ti * ITEM_W + ITEM_W / 2} y1={0}
+                    x2={bi * ITEM_W + ITEM_W / 2} y2={SVG_H}
+                    stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 3" opacity={0.5}
+                    markerEnd="url(#arr-gray)"
+                  />
+                ))}
+
+                {/* 교차 선 (앞, 빨간) */}
+                {lines.filter(l => l.isCross).map(({ ti, bi }, idx) => (
+                  <line key={`cr-${idx}`}
+                    x1={ti * ITEM_W + ITEM_W / 2} y1={2}
+                    x2={bi * ITEM_W + ITEM_W / 2} y2={SVG_H - 4}
+                    stroke="#f43f5e" strokeWidth={2.5}
+                    markerEnd="url(#arr-pink)"
+                  />
+                ))}
+
+                {/* 교차점에 ✕ 원 */}
+                {crossPoints.map(({ cx, cy }, idx) => (
+                  <g key={`cp-${idx}`}>
+                    <circle cx={cx} cy={cy} r={9} fill="white" stroke="#f43f5e" strokeWidth={2}/>
+                    <text x={cx} y={cy + 4.5} textAnchor="middle" fontSize={10} fill="#f43f5e" fontWeight="bold">✕</text>
+                  </g>
+                ))}
+              </svg>
+
+              {/* 아래: 엑셀 헤더 행 */}
+              <div className="flex items-start" style={{ width: totalW }}>
+                {botItems.map((item, i) => (
+                  <div key={i} style={{ width: ITEM_W, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "0 4px" }}>
+                    <div style={{
+                      width: "100%", padding: "5px 6px", textAlign: "center",
+                      background: "#f0fdf4", border: "2px solid #86efac", borderRadius: 8,
+                      fontSize: 11, fontWeight: 700, color: "#15803d",
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      boxShadow: "0 1px 4px rgba(34,197,94,0.15)",
+                    }} title={`${item.excelText} (${item.excelAddress})`}>
+                      {item.excelText || item.excelAddress}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* 엑셀 헤더 레이블 */}
+              <div className="flex items-center gap-1.5 mt-1.5" style={{ width: totalW }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#15803d", textTransform: "uppercase", letterSpacing: "0.05em" }}>엑셀 헤더</span>
+                <div style={{ flex: 1, height: 1, background: "#bbf7d0" }} />
+              </div>
+            </div>
+
+            {/* 버튼 */}
+            <div className="flex gap-2 px-5 pb-5 justify-end border-t border-gray-100 pt-4">
+              <button onClick={() => setShowCrossWarning(false)} className="btn btn-gray">
+                다시 매핑
+              </button>
+              <button onClick={() => { setShowCrossWarning(false); doApply(); }} className="btn btn-orange">
+                그냥 진행
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
+    </>
   );
 }

@@ -1,6 +1,12 @@
+import { useState } from "react";
 import { FileSpreadsheet, Play, Sparkles, RefreshCw } from "lucide-react";
 import { ExcelTemplate, ExcelCell, CellMapping } from "../types";
 import { mappingColor } from "../mappingColors";
+
+const ROW_SELECT_CURSOR = (() => {
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='20' height='16'><polygon points='1,1 11,8 1,15' fill='%23374151' stroke='white' stroke-width='1.2' stroke-linejoin='round'/><rect x='11' y='6' width='7' height='4' rx='1' fill='%23374151'/></svg>`;
+  return `url("data:image/svg+xml,${svg}") 1 8, default`;
+})();
 
 interface Props {
   template: ExcelTemplate | null;
@@ -15,6 +21,8 @@ interface Props {
   onReMap?: () => void;
   hwpLoaded?: boolean;
   autoMapDone?: boolean;
+  headerRow?: number | null;
+  onHeaderRowSelect?: (row: number | null) => void;
 }
 
 function colLetter(col: number): string {
@@ -30,7 +38,9 @@ function colLetter(col: number): string {
 
 export function ExcelTemplateView({
   template, activeSheetIdx, onSheetChange, onCellClick, mappings, pendingHwpSelected, onOpen, onConvert, onAutoMap, onReMap, hwpLoaded, autoMapDone,
+  headerRow, onHeaderRowSelect,
 }: Props) {
+  const [hoverRow, setHoverRow] = useState<number | null>(null);
   if (!template) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3">
@@ -39,7 +49,7 @@ export function ExcelTemplateView({
         {onOpen && (
           <button
             onClick={onOpen}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-green-500 text-white rounded-lg hover:bg-green-600 font-medium transition-colors"
+            className="btn btn-green"
           >
             <FileSpreadsheet size={14} /> 엑셀 템플릿 열기
           </button>
@@ -47,6 +57,16 @@ export function ExcelTemplateView({
       </div>
     );
   }
+
+  const inSelectMode = !!onHeaderRowSelect && headerRow === null;
+
+  // 셀이 헤더 행에 걸쳐있는지 (merge_rows 기준)
+  const isCellInHeaderRow = (cellRow: number, mergeRows: number) =>
+    headerRow != null && headerRow >= cellRow && headerRow < cellRow + mergeRows;
+
+  // 셀이 hover 행에 걸쳐있는지
+  const isCellInHoverRow = (cellRow: number, mergeRows: number) =>
+    hoverRow !== null && inSelectMode && hoverRow >= cellRow && hoverRow < cellRow + mergeRows;
 
   const sheet = template.sheets[activeSheetIdx];
   if (!sheet) return null;
@@ -73,15 +93,27 @@ export function ExcelTemplateView({
   return (
     <div className="flex flex-col h-full">
       {template.sheets.length > 1 && (
-        <div className="flex gap-1 p-2 border-b border-gray-200 overflow-x-auto shrink-0">
+        <div className="tab-bar shrink-0">
           {template.sheets.map((s, i) => (
             <button key={i} onClick={() => onSheetChange(i)}
-              className={`px-3 py-1 rounded text-xs whitespace-nowrap transition-colors ${
-                i === activeSheetIdx ? "bg-green-500 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}>
+              className={`tab-item${i === activeSheetIdx ? " active" : ""}`}>
               {s.name}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* 헤더 행 선택 배너 */}
+      {onHeaderRowSelect && headerRow === null && (
+        <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-amber-50 border-b border-amber-200">
+          <span className="text-[11px] font-semibold text-amber-700">↓ 행 번호를 클릭해 헤더 행을 선택하세요</span>
+        </div>
+      )}
+      {onHeaderRowSelect && headerRow != null && (
+        <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 bg-green-50 border-b border-green-100">
+          <span className="text-[11px] font-semibold text-green-700">{(headerRow as number) + 1}행 헤더 선택됨</span>
+          <button onClick={() => onHeaderRowSelect(null)}
+            className="ml-1 text-[10px] text-green-400 hover:text-red-400">변경</button>
         </div>
       )}
 
@@ -103,25 +135,48 @@ export function ExcelTemplateView({
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r}>
-                <td className="row-header">{r + 1}</td>
+            {rows.map((r) => {
+              const isHeaderRow = headerRow === r;
+              const isHoverRow = hoverRow === r && inSelectMode;
+              let trBg: string | undefined;
+              if (isHeaderRow) trBg = "#dcfce7";
+              else if (isHoverRow) trBg = "#f0fdf4";
+
+              return (
+              <tr key={r}
+                style={{ background: trBg }}
+                onMouseEnter={() => inSelectMode && setHoverRow(r)}
+                onMouseLeave={() => inSelectMode && setHoverRow(null)}
+              >
+                <td
+                  className={`row-header ${isHeaderRow ? "!bg-green-500 !text-white font-bold" : isHoverRow ? "!bg-green-200" : ""}`}
+                  style={onHeaderRowSelect ? { cursor: ROW_SELECT_CURSOR } : undefined}
+                  onClick={() => onHeaderRowSelect?.(r)}
+                  title={onHeaderRowSelect ? `${r + 1}행을 헤더로 선택` : undefined}
+                >{r + 1}</td>
                 {cols.map((c) => {
                   if (covered.has(`${r},${c}`)) return null;
                   const cell = cellMap.get(`${r},${c}`);
                   const mIdx = mappingIdx(r, c);
                   const color = mIdx >= 0 ? mappingColor(mIdx) : null;
+                  const mergeRows = cell?.merge_rows ?? 1;
+                  const cellInHeader = isCellInHeaderRow(r, mergeRows);
+                  const cellInHover = isCellInHoverRow(r, mergeRows);
 
                   return (
                     <td key={c}
                       rowSpan={cell && cell.merge_rows > 1 ? cell.merge_rows : undefined}
                       colSpan={cell && cell.merge_cols > 1 ? cell.merge_cols : undefined}
-                      style={color ? {
-                        background: color.bg,
-                        outline: `2px solid ${color.border}`,
-                        position: "relative",
-                      } : undefined}
-                      onClick={() => onCellClick(activeSheetIdx, r, c)}
+                      style={{
+                        ...(cellInHeader ? { background: "#dcfce7" } : {}),
+                        ...(cellInHover && !cellInHeader ? { background: "#f0fdf4" } : {}),
+                        ...(color && !cellInHeader ? { background: color.bg, outline: `2px solid ${color.border}`, position: "relative" as const } : {}),
+                        ...(inSelectMode ? { cursor: ROW_SELECT_CURSOR } : {}),
+                      }}
+                      onClick={() => {
+                        if (inSelectMode) onHeaderRowSelect!(r);
+                        else onCellClick(activeSheetIdx, r, c);
+                      }}
                       title={cell?.address}
                     >
                       {color && (
@@ -140,7 +195,8 @@ export function ExcelTemplateView({
                   );
                 })}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         </div>{/* /스크롤 그리드 */}
@@ -152,31 +208,18 @@ export function ExcelTemplateView({
               {/* 자동 매핑 / 재매핑 */}
               {hwpLoaded && (
                 autoMapDone && onReMap ? (
-                  <button
-                    onClick={onReMap}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white rounded-full shadow-lg hover:bg-purple-700 active:scale-95 transition-all font-bold text-sm whitespace-nowrap"
-                    style={{ boxShadow: "0 4px 20px rgba(124,58,237,0.4)" }}
-                    title="매핑을 초기화하고 자동 매핑 다시 실행"
-                  >
+                  <button onClick={onReMap} className="btn btn-purple" title="매핑을 초기화하고 자동 매핑 다시 실행">
                     <RefreshCw size={15} /> 재매핑
                   </button>
                 ) : onAutoMap ? (
-                  <button
-                    onClick={onAutoMap}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white rounded-full shadow-lg hover:bg-purple-700 active:scale-95 transition-all font-bold text-sm whitespace-nowrap"
-                    style={{ boxShadow: "0 4px 20px rgba(124,58,237,0.4)" }}
-                  >
-                    <Sparkles size={15} /> 자동 매핑
+                  <button onClick={onAutoMap} className="btn btn-purple">
+                    <Sparkles size={15} /> 한글내용 엑셀로 매핑시작
                   </button>
                 ) : null
               )}
               {/* 변환 시작 — 매핑이 있을 때 */}
               {mappings.length > 0 && onConvert && (
-                <button
-                  onClick={onConvert}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-orange-500 text-white rounded-full shadow-lg hover:bg-orange-600 active:scale-95 transition-all font-bold text-sm whitespace-nowrap"
-                  style={{ boxShadow: "0 4px 20px rgba(234,88,12,0.4)" }}
-                >
+                <button onClick={onConvert} className="btn btn-orange">
                   <Play size={15} fill="white" /> 변환 시작 ({mappings.length}개 매핑)
                 </button>
               )}
