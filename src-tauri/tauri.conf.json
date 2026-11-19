@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "hwpxls",
+  "productName": "증거목록 엑셀변환기",
   "mainBinaryName": "hwpxls",
   "version": "1.0.1",
   "identifier": "com.hwpxls.app",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "hwpxls - 한글 표 → 엑셀 변환기",
+        "title": "증거목록 엑셀변환기",
         "width": 1280,
         "height": 800,
         "resizable": true,
