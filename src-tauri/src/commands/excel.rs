@@ -1,7 +1,6 @@
 use std::io::BufReader;
 use std::path::Path;
 use log::error;
-use tauri::Manager;
 
 use calamine::{Data, Dimensions, Reader, Sheets, open_workbook_auto};
 use rust_xlsxwriter::{Format, Workbook};
@@ -87,14 +86,6 @@ fn get_merge_cells(workbook: &mut Sheets<BufReader<std::fs::File>>, sheet_name: 
     dims.iter().map(dims_to_tuple).collect()
 }
 
-/// 번들된 템플릿 파일 경로 반환
-#[tauri::command]
-pub fn get_bundled_template_path(app: tauri::AppHandle) -> Result<String, String> {
-    let path = app.path().resource_dir()
-        .map_err(|e| e.to_string())?
-        .join("template.xlsx");
-    Ok(path.to_string_lossy().to_string())
-}
 
 /// 엑셀 템플릿 파일 읽기 (xlsx / xls / xlsb / ods 모두 지원)
 #[tauri::command]

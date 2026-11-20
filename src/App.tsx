@@ -82,17 +82,7 @@ export default function App() {
     setMappings([]);
     setPendingMapping(null);
     setError(null);
-    try {
-      setLoading(true);
-      const path = await invoke<string>("get_bundled_template_path");
-      const tmpl = await invoke<ExcelTemplate>("read_excel_template", { path });
-      setTemplate(tmpl);
-      setExcelHeaderRow(1);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
-    }
+    await loadExcelFile("C:\\Users\\joaha\\Downloads\\템플릿.xlsx", 1);
   }, []);
 
   // 전체 초기화
@@ -163,18 +153,8 @@ export default function App() {
     }
   }, []);
 
-  // 번들 템플릿 자동 로드 (헤더 2행 고정)
-  const loadBundledTemplate = useCallback(async () => {
-    try {
-      const path = await invoke<string>("get_bundled_template_path");
-      await loadExcelFile(path, 1);
-    } catch (e) {
-      setError(String(e));
-    }
-  }, [loadExcelFile]);
-
   useEffect(() => {
-    loadBundledTemplate();
+    loadExcelFile("C:\\Users\\joaha\\Downloads\\템플릿.xlsx", 1);
   }, []);
 
   // 드래그 앤 드롭 이벤트
