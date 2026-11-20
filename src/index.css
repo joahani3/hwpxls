@@ -235,6 +235,19 @@ body {
   50%       { transform: translateX(5px); }
 }
 
+@keyframes header-hint {
+  0%, 100% { background: #dbeafe; }
+  50%       { background: #93c5fd; }
+}
+.header-hint-blink {
+  animation: header-hint 1s ease-in-out infinite;
+}
+.header-hint-blink-num {
+  animation: header-hint 1s ease-in-out infinite;
+  color: #1d4ed8 !important;
+  font-weight: 700;
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
