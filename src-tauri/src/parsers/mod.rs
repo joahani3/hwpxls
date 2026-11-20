@@ -16,6 +16,4 @@ pub enum ParseError {
     #[error("파일 크기 초과")]
     FileTooLarge,
 
-    #[error("{0}")]
-    Other(String),
 }
