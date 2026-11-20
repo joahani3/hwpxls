@@ -405,7 +405,7 @@ export default function App() {
       {/* 메인 패널 */}
       <div className="flex flex-col flex-1 min-h-0 gap-0 relative">
         {/* 엑셀 템플릿 패널 (상단) */}
-        <div className="flex flex-col h-1/2 border-b border-gray-200 min-h-0 transition-shadow"
+        <div className="flex flex-col max-h-[50%] shrink-0 border-b border-gray-200 min-h-0 transition-shadow"
           style={headerGuideNeeded?.excel ? { boxShadow: "inset 0 0 0 3px #16a34a" } : {}}>
           <div className="flex items-center bg-green-50 text-green-700 text-xs font-semibold px-3 py-1.5 border-b border-green-100 shrink-0">
             <span>엑셀 템플릿</span>
@@ -458,7 +458,7 @@ export default function App() {
         </div>
 
         {/* 한글 표 패널 (하단) */}
-        <div className="flex flex-col h-1/2 min-h-0 transition-shadow"
+        <div className="flex flex-col flex-1 min-h-0 transition-shadow"
           style={headerGuideNeeded?.hwp ? { boxShadow: "inset 0 0 0 3px #f59e0b" } : {}}>
           <div className="flex items-center bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1.5 border-b border-blue-100 shrink-0">
             <span>한글 표</span>

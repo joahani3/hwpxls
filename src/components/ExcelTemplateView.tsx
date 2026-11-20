@@ -81,7 +81,10 @@ export function ExcelTemplateView({
         if (r !== cell.row || c !== cell.col) covered.add(`${r},${c}`);
   }
 
-  const rows = Array.from({ length: sheet.max_row }, (_, i) => i);
+  const lastDataRow = sheet.cells.length > 0
+    ? Math.max(...sheet.cells.map(c => c.row + c.merge_rows - 1))
+    : -1;
+  const rows = Array.from({ length: lastDataRow + 1 }, (_, i) => i);
   const cols = Array.from({ length: sheet.max_col }, (_, i) => i);
 
   function mappingIdx(r: number, c: number): number {
