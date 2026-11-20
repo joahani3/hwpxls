@@ -203,7 +203,7 @@ export function ExcelTemplateView({
         </table>
         {/* 중앙 오버레이 버튼 그룹 */}
         {(hwpLoaded || mappings.length > 0) && (
-          <div className="absolute inset-0 flex items-end justify-center pb-4 pointer-events-none">
+          <div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none">
             <div className="flex flex-col items-center gap-3 pointer-events-auto">
               {/* 자동 매핑 / 재매핑 */}
               {hwpLoaded && (
