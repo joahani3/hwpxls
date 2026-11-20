@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { FileText } from "lucide-react";
 
 // 행 선택 커서: 오른쪽 화살표 (스프레드시트 행 선택 스타일)
@@ -27,8 +27,15 @@ export function HwpTableView({
   headerRows, onHeaderRowsSelect,
 }: Props) {
   const [hoverRow, setHoverRow] = useState<number | null>(null);
+  const [hintOn, setHintOn] = useState(true);
   const table = tables[activeTableIdx];
   const inSelectMode = !!onHeaderRowsSelect && (!headerRows || headerRows.length === 0);
+
+  useEffect(() => {
+    if (!inSelectMode) return;
+    const id = setInterval(() => setHintOn(v => !v), 600);
+    return () => clearInterval(id);
+  }, [inSelectMode]);
 
   if (tables.length === 0) {
     return (
@@ -121,7 +128,7 @@ export function HwpTableView({
             {rows.map((r) => {
               const isHeaderRow = headerRows?.includes(r) ?? false;
               const isHoverRow = hoverRows.has(r);
-              const isHint = inSelectMode && r < hintRowCount && !isHoverRow;
+              const isHint = inSelectMode && r < hintRowCount && !isHoverRow && hintOn;
               let trBg: string | undefined;
               if (isHeaderRow) trBg = "#dbeafe";
               else if (isHoverRow) trBg = "#eff6ff";

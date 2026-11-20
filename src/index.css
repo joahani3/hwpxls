@@ -243,12 +243,9 @@ body {
   50%       { transform: translateY(5px); }
 }
 
-@keyframes header-hint {
-  0%, 100% { background: #bfdbfe; color: #1e40af; }
-  50%       { background: #3b82f6; color: #fff; }
-}
 .header-hint-blink-num {
-  animation: header-hint 1s ease-in-out infinite;
+  background: #3b82f6 !important;
+  color: #fff !important;
   font-weight: 700;
 }
 
