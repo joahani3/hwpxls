@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileSpreadsheet, Play, Sparkles, RefreshCw } from "lucide-react";
+import { FileSpreadsheet, Play } from "lucide-react";
 import { ExcelTemplate, ExcelCell, CellMapping } from "../types";
 import { mappingColor } from "../mappingColors";
 
@@ -17,10 +17,6 @@ interface Props {
   pendingHwpSelected: boolean;
   onOpen?: () => void;
   onConvert?: () => void;
-  onAutoMap?: () => void;
-  onReMap?: () => void;
-  hwpLoaded?: boolean;
-  autoMapDone?: boolean;
   headerRow?: number | null;
   onHeaderRowSelect?: (row: number | null) => void;
 }
@@ -37,7 +33,7 @@ function colLetter(col: number): string {
 }
 
 export function ExcelTemplateView({
-  template, activeSheetIdx, onSheetChange, onCellClick, mappings, pendingHwpSelected, onOpen, onConvert, onAutoMap, onReMap, hwpLoaded, autoMapDone,
+  template, activeSheetIdx, onSheetChange, onCellClick, mappings, pendingHwpSelected, onOpen, onConvert,
   headerRow, onHeaderRowSelect,
 }: Props) {
   const [hoverRow, setHoverRow] = useState<number | null>(null);
@@ -201,28 +197,13 @@ export function ExcelTemplateView({
             })}
           </tbody>
         </table>
-        {/* 중앙 오버레이 버튼 그룹 */}
-        {(hwpLoaded || mappings.length > 0) && (
+        {/* 변환 시작 — 매핑이 있을 때 */}
+        {mappings.length > 0 && onConvert && (
           <div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none">
-            <div className="flex flex-col items-center gap-3 pointer-events-auto">
-              {/* 자동 매핑 / 재매핑 */}
-              {hwpLoaded && (
-                autoMapDone && onReMap ? (
-                  <button onClick={onReMap} className="btn btn-purple" title="매핑을 초기화하고 자동 매핑 다시 실행">
-                    <RefreshCw size={15} /> 재매핑
-                  </button>
-                ) : onAutoMap ? (
-                  <button onClick={onAutoMap} className="btn btn-purple">
-                    <Sparkles size={15} /> 한글내용 엑셀로 매핑시작
-                  </button>
-                ) : null
-              )}
-              {/* 변환 시작 — 매핑이 있을 때 */}
-              {mappings.length > 0 && onConvert && (
-                <button onClick={onConvert} className="btn btn-orange">
-                  <Play size={15} fill="white" /> 변환 시작 ({mappings.length}개 매핑)
-                </button>
-              )}
+            <div className="pointer-events-auto">
+              <button onClick={onConvert} className="btn btn-orange">
+                <Play size={15} fill="white" /> 변환 시작 ({mappings.length}개 매핑)
+              </button>
             </div>
           </div>
         )}

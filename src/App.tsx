@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
-import { AlertCircle, Bug, Info, FileText, FileSpreadsheet, ClipboardList, X } from "lucide-react";
+import { AlertCircle, Bug, Info, FileText, FileSpreadsheet, ClipboardList, X, Sparkles, RefreshCw } from "lucide-react";
 
 import {
   HwpTable,
@@ -430,28 +430,7 @@ export default function App() {
               mappings={mappings}
               pendingHwpSelected={!!selectedHwpCell}
               onConvert={template ? () => setShowPreview(true) : undefined}
-              onAutoMap={
-                hwpTables.length > 0 && template &&
-                hwpHeaderRows && hwpHeaderRows.length > 0 &&
-                excelHeaderRow !== null
-                  ? () => setShowAutoMapping(true)
-                  : undefined
-              }
-              onReMap={hwpTables.length > 0 && template && mappings.length > 0 ? handleReMap : undefined}
               headerRow={excelHeaderRow}
-              hwpLoaded={hwpTables.length > 0 && !!template}
-              autoMapDone={(() => {
-                if (!template || hwpTables.length === 0 || mappings.length === 0) return false;
-                // 현재 활성 시트의 헤더 셀(값 있는 것)이 모두 매핑됐는지 확인
-                const sheet = template.sheets[activeSheet];
-                if (!sheet) return false;
-                const hwpTable = hwpTables[0];
-                if (!hwpTable) return false;
-                // 매핑된 HWP 열 수 = 전체 HWP 헤더 열 수(0행 기준)
-                const hwpHeaderCols = hwpTable.cells.filter(c => c.row === 0).length;
-                const mappedCols = new Set(mappings.map(m => m.hwp_col)).size;
-                return hwpHeaderCols > 0 && mappedCols >= hwpHeaderCols;
-              })()}
             />
           </div>
         </div>
@@ -473,7 +452,25 @@ export default function App() {
               </button>
             )}
           </div>
-          <div className="flex-1 min-h-0 overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-hidden relative">
+            {/* 매핑 버튼 오버레이 */}
+            {hwpTables.length > 0 && template &&
+              hwpHeaderRows && hwpHeaderRows.length > 0 &&
+              excelHeaderRow !== null && (
+              <div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none z-10">
+                <div className="pointer-events-auto">
+                  {mappings.length > 0 ? (
+                    <button onClick={handleReMap} className="btn btn-purple">
+                      <RefreshCw size={15} /> 재매핑
+                    </button>
+                  ) : (
+                    <button onClick={() => setShowAutoMapping(true)} className="btn btn-purple">
+                      <Sparkles size={15} /> 한글 내용 엑셀로 매핑시작
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
             <HwpTableView
               tables={hwpTables}
               activeTableIdx={activeHwpTable}
