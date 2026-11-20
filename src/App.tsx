@@ -430,14 +430,13 @@ export default function App() {
               mappings={mappings}
               pendingHwpSelected={!!selectedHwpCell}
               onConvert={template ? () => setShowPreview(true) : undefined}
-              onAutoMap={hwpTables.length > 0 && template ? () => {
-                const needHwp = !hwpHeaderRows || hwpHeaderRows.length === 0;
-                if (needHwp) {
-                  setHeaderGuideNeeded({ hwp: true, excel: false });
-                } else {
-                  setShowAutoMapping(true);
-                }
-              } : undefined}
+              onAutoMap={
+                hwpTables.length > 0 && template &&
+                hwpHeaderRows && hwpHeaderRows.length > 0 &&
+                excelHeaderRow !== null
+                  ? () => setShowAutoMapping(true)
+                  : undefined
+              }
               onReMap={hwpTables.length > 0 && template && mappings.length > 0 ? handleReMap : undefined}
               headerRow={excelHeaderRow}
               hwpLoaded={hwpTables.length > 0 && !!template}
