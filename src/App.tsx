@@ -430,14 +430,6 @@ export default function App() {
               mappings={mappings}
               pendingHwpSelected={!!selectedHwpCell}
               onConvert={template ? () => setShowPreview(true) : undefined}
-              onAutoMap={
-                hwpTables.length > 0 && template &&
-                hwpHeaderRows && hwpHeaderRows.length > 0 &&
-                excelHeaderRow !== null
-                  ? () => setShowAutoMapping(true)
-                  : undefined
-              }
-              onReMap={hwpTables.length > 0 && template && mappings.length > 0 ? handleReMap : undefined}
               headerRow={excelHeaderRow}
               hwpLoaded={hwpTables.length > 0 && !!template}
               autoMapDone={(() => {
@@ -462,6 +454,27 @@ export default function App() {
           <div className="flex items-center bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1.5 border-b border-blue-100 shrink-0">
             <span>한글 표</span>
             <div className="flex-1" />
+            {hwpTables.length > 0 && template &&
+              hwpHeaderRows && hwpHeaderRows.length > 0 &&
+              excelHeaderRow !== null && (
+              mappings.length > 0 ? (
+                <button
+                  onClick={handleReMap}
+                  className="btn btn-purple mr-1"
+                  style={{ height: "23px", fontSize: "11px", padding: "0 8px" }}
+                >
+                  재매핑
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowAutoMapping(true)}
+                  className="btn btn-purple mr-1"
+                  style={{ height: "23px", fontSize: "11px", padding: "0 8px" }}
+                >
+                  한글 내용 엑셀로 매핑시작
+                </button>
+              )
+            )}
             {hwpPath && (
               <button
                 onClick={resetAll}
