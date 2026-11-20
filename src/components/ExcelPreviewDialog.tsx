@@ -1,5 +1,69 @@
-import { useState, useEffect, useRef } from "react";
-import { X, Download, CheckCircle, FolderOpen, FileSpreadsheet, Replace, Eye, Link2, Link2Off } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { X, Download, CheckCircle, FolderOpen, FileSpreadsheet, Replace, Eye, Link2, Link2Off, AlertTriangle, Wrench } from "lucide-react";
+
+// ── 데이터 검증 ──────────────────────────────────────────────
+interface ValidationItem {
+  excelSheet: number;
+  excelRow: number;
+  excelCol: number;
+  address: string;
+  columnName: string;
+  value: string;
+  autoFix?: string;
+  issue: string;
+}
+
+type ValidateResult = { ok: true } | { ok: false; autoFix?: string; issue: string };
+
+function validateValue(col: string, value: string): ValidateResult {
+  const v = value.trim();
+  if (v === "") return { ok: true }; // 빈 값은 패스
+  // 순번
+  if (/^순\s*번$/.test(col)) {
+    if (/^\d+$/.test(v)) return { ok: true };
+    const nums = v.replace(/[^\d]/g, "");
+    if (nums) return { ok: false, autoFix: nums, issue: "숫자만 입력 가능" };
+    return { ok: false, issue: "숫자만 입력 가능" };
+  }
+  // 증거방법-작성
+  if (col.includes("작성")) {
+    if (v === "검사" || v === "사법경찰관") return { ok: true };
+    return { ok: false, issue: "검사 또는 사법경찰관만 입력 가능 (수동 수정 필요)" };
+  }
+  // 기일 (신청기일, 증거의견-기일, 증거결정-기일, 증거조사기일)
+  if (col.includes("기일")) {
+    if (v === "법정외") return { ok: true };
+    if (/^준비기일([1-9]|10)$/.test(v)) return { ok: true };
+    const n = Number(v);
+    if (!isNaN(n) && Number.isInteger(n) && n >= 1 && n <= 100) return { ok: true };
+    if (/법정\s*외/.test(v)) return { ok: false, autoFix: "법정외", issue: "형식 정규화" };
+    const m = v.match(/준비\s*기일\s*(\d+)/);
+    if (m) {
+      const pn = parseInt(m[1]);
+      if (pn >= 1 && pn <= 10) return { ok: false, autoFix: `준비기일${pn}`, issue: "준비기일 형식 정규화" };
+      return { ok: false, issue: "준비기일은 1~10만 가능" };
+    }
+    if (!isNaN(n) && n > 100) return { ok: false, issue: "숫자는 1~100까지만 가능" };
+    return { ok: false, issue: "법정외 / 준비기일1~10 / 숫자 1~100만 입력 가능" };
+  }
+  // O/X (적, 실, 임, 내, 증거결정-내용)
+  const oxCols = ["적", "실", "임", "내"];
+  if (oxCols.includes(col) || col.includes("내용")) {
+    if (v === "O" || v === "X") return { ok: true };
+    if (v.toLowerCase() === "o" || v === "0") return { ok: false, autoFix: "O", issue: "O 또는 X만 입력 가능" };
+    if (v.toLowerCase() === "x") return { ok: false, autoFix: "X", issue: "O 또는 X만 입력 가능" };
+    return { ok: false, issue: "O 또는 X만 입력 가능" };
+  }
+  return { ok: true };
+}
+
+function getColumnName(sheet: ExcelTemplate["sheets"][0], col: number, firstDataRow: number): string {
+  const cells = sheet.cells.filter(c =>
+    c.row < firstDataRow &&
+    col >= c.col && col < c.col + c.merge_cols
+  );
+  return cells.map(c => (c.value ?? "").trim()).filter(Boolean).join("");
+}
 
 // 아래 방향 화살표 커서 (열 선택 모드)
 const COL_SELECT_CURSOR = (() => {
@@ -27,6 +91,8 @@ interface Props {
   onExported?: (path: string, changeLog: ChangeLogEntryType[]) => void;
   onClose: () => void;
   loading?: boolean;
+  isDefaultTemplate?: boolean;
+  onValidate?: () => void;
 }
 
 function colLetter(col: number): string {
@@ -42,7 +108,7 @@ function colLetter(col: number): string {
 
 function colLetter2(col: number): string { return colLetter(col); }
 
-export function ExcelPreviewDialog({ hwpTables, hwpPath, template, mappings, onExport, onExported, onClose, loading }: Props) {
+export function ExcelPreviewDialog({ hwpTables, hwpPath, template, mappings, onExport, onExported, onClose, loading, isDefaultTemplate, onValidate }: Props) {
   const [activeSheet, setActiveSheet] = useState(0);
   const [savedPath, setSavedPath] = useState<string | null>(null);
   const [showHwpSide, setShowHwpSide] = useState(true);
@@ -106,6 +172,79 @@ export function ExcelPreviewDialog({ hwpTables, hwpPath, template, mappings, onE
   // 원본 보기
   const [showOriginal, setShowOriginal] = useState(false);
   const [showChangedOnly, setShowChangedOnly] = useState(false);
+
+  // 데이터 검증
+  const [showValidation, setShowValidation] = useState(false);
+  const [validationItems, setValidationItems] = useState<ValidationItem[]>([]);
+
+  const runValidation = useCallback(() => {
+    const s = template.sheets[0];
+    if (!s) return;
+    const firstDataRow = mappings.length > 0
+      ? Math.min(...mappings.map(m => m.excel_row))
+      : 2;
+    // valueMap 재계산 (render-time const에 의존 불가 → 직접 계산)
+    const vm = new Map<string, string>();
+    for (const m of mappings) {
+      const table = hwpTables[m.hwp_table_idx];
+      if (!table) continue;
+      table.cells
+        .filter(c => c.col === m.hwp_col && c.row > m.hwp_row)
+        .sort((a, b) => a.row - b.row)
+        .forEach((hwpCell, offset) => {
+          vm.set(`${m.excel_sheet}:${m.excel_row + 1 + offset}:${m.excel_col}`, hwpCell.text);
+        });
+    }
+    // override 반영
+    const evm = new Map(vm);
+    for (const ov of overrides.values()) {
+      evm.set(`${ov.excel_sheet}:${ov.excel_row}:${ov.excel_col}`, ov.value);
+    }
+    const items: ValidationItem[] = [];
+    for (const [key, val] of evm.entries()) {
+      const [, rStr, cStr] = key.split(":");
+      const row = Number(rStr), col = Number(cStr);
+      const colName = getColumnName(s, col, row);
+      if (!colName) continue;
+      const result = validateValue(colName, val);
+      if (!result.ok) {
+        const cell = s.cells.find(c => c.row === row && c.col === col);
+        items.push({
+          excelSheet: 0,
+          excelRow: row,
+          excelCol: col,
+          address: cell?.address ?? `R${row + 1}C${col + 1}`,
+          columnName: colName,
+          value: val,
+          autoFix: result.autoFix,
+          issue: result.issue,
+        });
+      }
+    }
+    setValidationItems(items);
+    setShowValidation(true);
+  }, [mappings, template, hwpTables, overrides]);
+
+  const applyAutoFixes = useCallback(() => {
+    const newOverrides = new Map(overrides);
+    const newLog = [...changeLog];
+    for (const item of validationItems.filter(i => i.autoFix !== undefined)) {
+      const ovKey = `${item.excelSheet}:${item.excelRow}:${item.excelCol}`;
+      newOverrides.set(ovKey, {
+        excel_sheet: item.excelSheet,
+        excel_row: item.excelRow,
+        excel_col: item.excelCol,
+        value: item.autoFix!,
+      });
+      const existing = newLog.findIndex(e => e.sheet === item.excelSheet && e.row === item.excelRow && e.col === item.excelCol);
+      const entry: ChangeLogEntry = { sheet: item.excelSheet, row: item.excelRow, col: item.excelCol, original: item.value, replaced: item.autoFix! };
+      if (existing >= 0) newLog[existing] = entry;
+      else newLog.push(entry);
+    }
+    setOverrides(newOverrides);
+    setChangeLog(newLog);
+    setShowValidation(false);
+  }, [validationItems, overrides, changeLog]);
 
   const handleExport = async () => {
     const rustLog: ChangeLogEntryType[] = changeLog.map(e => ({
@@ -379,21 +518,95 @@ export function ExcelPreviewDialog({ hwpTables, hwpPath, template, mappings, onE
               </button>
             )}
 
-            {/* 찾기/바꾸기 */}
-            <button
-              onClick={() => setShowFindReplace(v => !v)}
-              title="찾기/바꾸기"
-              className={`flex flex-col items-center gap-0.5 px-4 py-2 rounded-xl border-2 transition-colors ${
-                showFindReplace
-                  ? "bg-blue-50 border-blue-400 text-blue-700"
-                  : "border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-500"
-              }`}
-            >
-              <Replace size={20} />
-              <span className="text-[9px] font-semibold tracking-wide">찾기/바꾸기</span>
-            </button>
+            {/* 기본 템플릿: 데이터 검증하기 / 그 외: 찾기/바꾸기 */}
+            {isDefaultTemplate ? (
+              <button
+                onClick={runValidation}
+                title="데이터 검증하기"
+                className="flex flex-col items-center gap-0.5 px-4 py-2 rounded-xl border-2 border-gray-200 text-gray-400 hover:border-purple-300 hover:text-purple-500 transition-colors"
+              >
+                <CheckCircle size={20} />
+                <span className="text-[9px] font-semibold tracking-wide">데이터 검증</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowFindReplace(v => !v)}
+                title="찾기/바꾸기"
+                className={`flex flex-col items-center gap-0.5 px-4 py-2 rounded-xl border-2 transition-colors ${
+                  showFindReplace
+                    ? "bg-blue-50 border-blue-400 text-blue-700"
+                    : "border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-500"
+                }`}
+              >
+                <Replace size={20} />
+                <span className="text-[9px] font-semibold tracking-wide">찾기/바꾸기</span>
+              </button>
+            )}
           </div>
         </div>
+
+        {/* 데이터 검증 결과 패널 */}
+        {showValidation && (
+          <div className="shrink-0 border-b border-purple-200 bg-purple-50 flex flex-col gap-0" style={{ maxHeight: 320, overflowY: "auto" }}>
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-purple-100 bg-purple-100 sticky top-0">
+              <AlertTriangle size={15} className="text-purple-600" />
+              <span className="text-[12px] font-bold text-purple-700">
+                데이터 검증 결과
+                {validationItems.length === 0
+                  ? " — 모든 항목 정상"
+                  : ` — ${validationItems.length}개 문제 발견`}
+              </span>
+              {validationItems.some(i => i.autoFix !== undefined) && (
+                <button
+                  onClick={applyAutoFixes}
+                  className="ml-2 flex items-center gap-1 px-3 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold transition-colors"
+                >
+                  <Wrench size={12} /> 자동 수정 ({validationItems.filter(i => i.autoFix !== undefined).length}건) 적용
+                </button>
+              )}
+              <button onClick={() => setShowValidation(false)}
+                className="ml-auto text-purple-400 hover:text-purple-700 p-0.5">
+                <X size={14} />
+              </button>
+            </div>
+            {validationItems.length === 0 ? (
+              <div className="px-4 py-3 text-[12px] text-green-700 flex items-center gap-2">
+                <CheckCircle size={14} className="text-green-500" /> 검증 항목에 문제가 없습니다.
+              </div>
+            ) : (
+              <table className="w-full text-[11px]" style={{ borderCollapse: "collapse" }}>
+                <thead>
+                  <tr className="bg-purple-100">
+                    <th className="px-3 py-1.5 text-left font-semibold text-purple-700 border-b border-purple-200">셀</th>
+                    <th className="px-3 py-1.5 text-left font-semibold text-purple-700 border-b border-purple-200">열</th>
+                    <th className="px-3 py-1.5 text-left font-semibold text-purple-700 border-b border-purple-200">현재 값</th>
+                    <th className="px-3 py-1.5 text-left font-semibold text-purple-700 border-b border-purple-200">문제</th>
+                    <th className="px-3 py-1.5 text-left font-semibold text-purple-700 border-b border-purple-200">수정값</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {validationItems.map((item, idx) => (
+                    <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-purple-50/50"}>
+                      <td className="px-3 py-1.5 font-mono text-gray-500 border-b border-purple-100">{item.address}</td>
+                      <td className="px-3 py-1.5 text-gray-700 font-semibold border-b border-purple-100">{item.columnName}</td>
+                      <td className="px-3 py-1.5 border-b border-purple-100">
+                        <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-mono">{item.value || "(빈 값)"}</span>
+                      </td>
+                      <td className="px-3 py-1.5 text-orange-700 border-b border-purple-100">{item.issue}</td>
+                      <td className="px-3 py-1.5 border-b border-purple-100">
+                        {item.autoFix !== undefined ? (
+                          <span className="px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-mono font-semibold">{item.autoFix}</span>
+                        ) : (
+                          <span className="text-gray-400">수동 수정 필요</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
 
         {/* 찾기/바꾸기 모드 안내 */}
         {showFindReplace && (
@@ -521,6 +734,12 @@ export function ExcelPreviewDialog({ hwpTables, hwpPath, template, mappings, onE
               원본값 (변경 전)
             </span>
           )}
+          {showValidation && validationItems.length > 0 && (
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded inline-block" style={{background:"#fef2f2", border:"2px solid #ef4444"}} />
+              검증 오류
+            </span>
+          )}
           {changeLog.length > 0 && (
             <label className="ml-auto flex items-center gap-1.5 cursor-pointer select-none font-medium text-gray-600">
               <input
@@ -626,10 +845,13 @@ export function ExcelPreviewDialog({ hwpTables, hwpPath, template, mappings, onE
                     if (origValue !== undefined) className += " ring-1 ring-pink-400 ring-inset";
 
                     const isReplaced = overrides.has(`${activeSheet}:${r}:${c}`);
+                    const isValidationError = showValidation && validationItems.some(i => i.excelSheet === activeSheet && i.excelRow === r && i.excelCol === c);
                     const isMergedH = (cell?.merge_cols ?? 1) > 1;
                     const isStepCurrent = stepMode && stepMatches[stepIdx]?.row === r && stepMatches[stepIdx]?.col === c;
                     const colHighlightStyle: React.CSSProperties = {
-                      ...(isStepCurrent
+                      ...(isValidationError
+                        ? { background: "#fef2f2", outline: "2px solid #ef4444", outlineOffset: "-2px" }
+                        : isStepCurrent
                         ? { background: "#fef3c7", outline: "3px solid #f59e0b", outlineOffset: "-2px" }
                         : !isMergedH && isColSelected
                         ? { background: "#dbeafe", outline: "2px solid #60a5fa", outlineOffset: "-2px" }

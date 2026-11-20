@@ -50,6 +50,7 @@ export default function App() {
   const [resultPath, setResultPath] = useState<string | null>(null);
   const [resultChangeLog, setResultChangeLog] = useState<ChangeLogEntry[]>([]);
   const [showInfo, setShowInfo] = useState(false);
+  const [infoClickCount, setInfoClickCount] = useState(0);
   const [viewExcelPath, setViewExcelPath] = useState<string | null>(null);
   // 자동 매핑을 이미 띄운 파일 조합 추적 (같은 조합 중복 팝업 방지)
   const autoMappingShownKey = useRef("");
@@ -74,15 +75,14 @@ export default function App() {
   const [dragOver, setDragOver] = useState(false);
   const [dragFileType, setDragFileType] = useState<"hwp" | "xlsx" | "mixed" | null>(null);
 
-  // 엑셀 초기화 (번들 템플릿 재로드)
-  const resetExcel = useCallback(async () => {
+  // 엑셀 초기화 → 상태 비우고 파일 피커로 돌아감
+  const resetExcel = useCallback(() => {
     setTemplate(null);
     setActiveSheet(0);
     setExcelHeaderRow(null);
     setMappings([]);
     setPendingMapping(null);
     setError(null);
-    await loadExcelFile("C:\\Users\\joaha\\Downloads\\템플릿.xlsx", 1);
   }, []);
 
   // 전체 초기화
@@ -152,6 +152,17 @@ export default function App() {
       setLoading(false);
     }
   }, []);
+
+  // 엑셀 파일 열기 (다이얼로그)
+  const openExcelTemplate = useCallback(async () => {
+    setError(null);
+    const selected = await open({
+      filters: [{ name: "Excel 파일", extensions: ["xlsx", "xls", "xlsb", "ods"] }],
+      multiple: false,
+    });
+    if (!selected || typeof selected !== "string") return;
+    await loadExcelFile(selected);
+  }, [loadExcelFile]);
 
   useEffect(() => {
     loadExcelFile("C:\\Users\\joaha\\Downloads\\템플릿.xlsx", 1);
@@ -335,7 +346,7 @@ export default function App() {
           </span>
         )}
 
-        {hwpPath && (
+        {hwpPath && infoClickCount >= 5 && (
           <button
             onClick={async () => {
               try {
@@ -372,7 +383,7 @@ export default function App() {
         </button>
 
         <button
-          onClick={() => setShowInfo(true)}
+          onClick={() => { setShowInfo(true); setInfoClickCount(c => c + 1); }}
           className="p-1.5 text-gray-400 hover:text-blue-500 transition-colors"
           title="앱 정보"
         >
@@ -429,8 +440,10 @@ export default function App() {
               onCellClick={handleExcelCellClick}
               mappings={mappings}
               pendingHwpSelected={!!selectedHwpCell}
+              onOpen={openExcelTemplate}
               onConvert={template ? () => setShowPreview(true) : undefined}
               headerRow={excelHeaderRow}
+              onHeaderRowSelect={setExcelHeaderRow}
             />
           </div>
         </div>
@@ -457,7 +470,7 @@ export default function App() {
             {hwpTables.length > 0 && template &&
               hwpHeaderRows && hwpHeaderRows.length > 0 &&
               excelHeaderRow !== null && (
-              <div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none z-10">
+              <div className="absolute inset-0 flex items-start justify-center pt-1 pointer-events-none z-10">
                 <div className="pointer-events-auto">
                   {mappings.length > 0 ? (
                     <button onClick={handleReMap} className="btn btn-purple">
@@ -550,6 +563,8 @@ export default function App() {
           onExport={exportExcel}
           onExported={(path, log) => { setResultPath(path); setResultChangeLog(log); setShowPreview(false); setViewExcelPath(path); }}
           onClose={() => setShowPreview(false)}
+          isDefaultTemplate={template?.path === "C:\\Users\\joaha\\Downloads\\템플릿.xlsx"}
+          onValidate={() => {/* 동작 방법 추후 구현 */}}
         />
       )}
 
