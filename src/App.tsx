@@ -403,41 +403,9 @@ export default function App() {
       )}
 
       {/* 메인 패널 */}
-      <div className="flex flex-1 min-h-0 gap-0 relative">
-        {/* 한글 표 패널 */}
-        <div className="flex flex-col w-1/2 border-r border-gray-200 min-h-0 transition-shadow"
-          style={headerGuideNeeded?.hwp ? { boxShadow: "inset 0 0 0 3px #f59e0b" } : {}}>
-          <div className="flex items-center bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1.5 border-b border-blue-100 shrink-0">
-            <span>한글 표</span>
-            <div className="flex-1" />
-            {hwpPath && (
-              <button
-                onClick={resetAll}
-                className="btn btn-orange"
-                style={{ height: "23px", fontSize: "11px", padding: "0 8px" }}
-                title="한글·매핑 초기화 후 다시 업로드"
-              >
-                초기화
-              </button>
-            )}
-          </div>
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <HwpTableView
-              tables={hwpTables}
-              activeTableIdx={activeHwpTable}
-              onTableChange={(i) => { setActiveHwpTable(i); setHwpHeaderRows(null); }}
-              selectedCell={selectedHwpCell}
-              onCellClick={handleHwpCellClick}
-              mappings={mappings}
-              onOpen={openHwpFile}
-              headerRows={hwpHeaderRows}
-              onHeaderRowsSelect={setHwpHeaderRows}
-            />
-          </div>
-        </div>
-
-        {/* 엑셀 템플릿 패널 */}
-        <div className="flex flex-col w-1/2 min-h-0 transition-shadow"
+      <div className="flex flex-col flex-1 min-h-0 gap-0 relative">
+        {/* 엑셀 템플릿 패널 (상단) */}
+        <div className="flex flex-col h-1/2 border-b border-gray-200 min-h-0 transition-shadow"
           style={headerGuideNeeded?.excel ? { boxShadow: "inset 0 0 0 3px #16a34a" } : {}}>
           <div className="flex items-center bg-green-50 text-green-700 text-xs font-semibold px-3 py-1.5 border-b border-green-100 shrink-0">
             <span>엑셀 템플릿</span>
@@ -489,6 +457,38 @@ export default function App() {
           </div>
         </div>
 
+        {/* 한글 표 패널 (하단) */}
+        <div className="flex flex-col h-1/2 min-h-0 transition-shadow"
+          style={headerGuideNeeded?.hwp ? { boxShadow: "inset 0 0 0 3px #f59e0b" } : {}}>
+          <div className="flex items-center bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1.5 border-b border-blue-100 shrink-0">
+            <span>한글 표</span>
+            <div className="flex-1" />
+            {hwpPath && (
+              <button
+                onClick={resetAll}
+                className="btn btn-orange"
+                style={{ height: "23px", fontSize: "11px", padding: "0 8px" }}
+                title="한글·매핑 초기화 후 다시 업로드"
+              >
+                초기화
+              </button>
+            )}
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <HwpTableView
+              tables={hwpTables}
+              activeTableIdx={activeHwpTable}
+              onTableChange={(i) => { setActiveHwpTable(i); setHwpHeaderRows(null); }}
+              selectedCell={selectedHwpCell}
+              onCellClick={handleHwpCellClick}
+              mappings={mappings}
+              onOpen={openHwpFile}
+              headerRows={hwpHeaderRows}
+              onHeaderRowsSelect={setHwpHeaderRows}
+            />
+          </div>
+        </div>
+
         {/* 헤더 선택 안내 오버레이 */}
         {headerGuideNeeded && (
           <div className="absolute inset-0 pointer-events-none z-20 flex items-start justify-center pt-12">
@@ -510,20 +510,20 @@ export default function App() {
               <div className="flex flex-col gap-2">
                 {headerGuideNeeded.hwp && (
                   <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2.5">
-                    <span className="text-amber-500 font-bold text-lg" style={{ animation: "bounce-left 0.8s ease-in-out infinite" }}>←</span>
                     <div>
-                      <div className="text-xs font-bold text-amber-800">한글 표 (왼쪽 패널)</div>
+                      <div className="text-xs font-bold text-amber-800">한글 표 (하단 패널)</div>
                       <div className="text-[11px] text-amber-700">행 번호를 클릭해 헤더 행을 선택하세요</div>
                     </div>
+                    <span className="text-amber-500 font-bold text-lg ml-auto" style={{ animation: "bounce-down 0.8s ease-in-out infinite" }}>↓</span>
                   </div>
                 )}
                 {headerGuideNeeded.excel && (
                   <div className="flex items-center gap-2 bg-green-50 border border-green-300 rounded-lg px-3 py-2.5">
+                    <span className="text-green-600 font-bold text-lg" style={{ animation: "bounce-up 0.8s ease-in-out infinite" }}>↑</span>
                     <div>
-                      <div className="text-xs font-bold text-green-800">엑셀 템플릿 (오른쪽 패널)</div>
+                      <div className="text-xs font-bold text-green-800">엑셀 템플릿 (상단 패널)</div>
                       <div className="text-[11px] text-green-700">행 번호를 클릭해 헤더 행을 선택하세요</div>
                     </div>
-                    <span className="text-green-600 font-bold text-lg ml-auto" style={{ animation: "bounce-right 0.8s ease-in-out infinite" }}>→</span>
                   </div>
                 )}
               </div>
