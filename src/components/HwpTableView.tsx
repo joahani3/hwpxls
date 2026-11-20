@@ -136,7 +136,6 @@ export function HwpTableView({
               return (
               <tr key={r}
                 style={{ background: trBg }}
-                className={isHint ? "header-hint-blink" : undefined}
                 onMouseEnter={() => inSelectMode && setHoverRow(r)}
                 onMouseLeave={() => inSelectMode && setHoverRow(null)}
               >
@@ -159,13 +158,12 @@ export function HwpTableView({
                   // rowSpan으로 헤더 행에 걸쳐있는 셀은 헤더 색으로 강조
                   const cellInHeader = isCellInHeaderRow(r, cell.row_span);
                   const cellInHover = isCellInHoverRow(r, cell.row_span);
-                  const cellInHint = isHint;
 
                   return (
                     <td key={c}
                       rowSpan={cell.row_span > 1 ? cell.row_span : undefined}
                       colSpan={cell.col_span > 1 ? cell.col_span : undefined}
-                      className={isSelected ? "selected-hwp" : cellInHint && !cellInHeader ? "header-hint-blink" : ""}
+                      className={isSelected ? "selected-hwp" : ""}
                       style={{
                         ...(cellInHeader && !isSelected ? { background: "#dbeafe" } : {}),
                         ...(cellInHover && !cellInHeader && !isSelected ? { background: "#eff6ff" } : {}),

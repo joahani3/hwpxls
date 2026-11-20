@@ -236,15 +236,11 @@ body {
 }
 
 @keyframes header-hint {
-  0%, 100% { background: #dbeafe; }
-  50%       { background: #93c5fd; }
-}
-.header-hint-blink {
-  animation: header-hint 1s ease-in-out infinite;
+  0%, 100% { background: #bfdbfe; color: #1e40af; }
+  50%       { background: #3b82f6; color: #fff; }
 }
 .header-hint-blink-num {
   animation: header-hint 1s ease-in-out infinite;
-  color: #1d4ed8 !important;
   font-weight: 700;
 }
 
