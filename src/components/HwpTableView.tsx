@@ -57,15 +57,8 @@ export function HwpTableView({
   const rows = Array.from({ length: table.total_rows }, (_, i) => i);
   const cols = Array.from({ length: table.total_cols }, (_, i) => i);
 
-  // 헤더 행 자동 감지: 텍스트 있는 셀이 가장 많은 첫 번째 행 (row 0 ~ 3 범위)
-  const detectedHeaderRow = (() => {
-    if (!inSelectMode) return null;
-    for (let r = 0; r < Math.min(4, table.total_rows); r++) {
-      const filledCols = table.cells.filter(c => c.row === r && c.text.trim()).length;
-      if (filledCols >= 2) return r;
-    }
-    return 0;
-  })();
+  // 헤더 힌트 범위: 1~4행 (index 0~3)
+  const hintRowCount = Math.min(4, table.total_rows);
 
   // 선택된 행과 hover 행 Set (단순 단일 행)
   const hoverRows: Set<number> = hoverRow !== null && inSelectMode
@@ -128,7 +121,7 @@ export function HwpTableView({
             {rows.map((r) => {
               const isHeaderRow = headerRows?.includes(r) ?? false;
               const isHoverRow = hoverRows.has(r);
-              const isHint = detectedHeaderRow !== null && r === detectedHeaderRow && !isHoverRow;
+              const isHint = inSelectMode && r < hintRowCount && !isHoverRow;
               let trBg: string | undefined;
               if (isHeaderRow) trBg = "#dbeafe";
               else if (isHoverRow) trBg = "#eff6ff";
