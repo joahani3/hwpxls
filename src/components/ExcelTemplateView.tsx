@@ -128,9 +128,7 @@ export function ExcelTemplateView({
       )}
 
       {/* 그리드 + 오버레이 버튼을 함께 담는 relative wrapper */}
-      <div className="flex-1 min-h-0 relative">
-        {/* 스크롤 가능한 그리드 */}
-        <div className="absolute inset-0 overflow-auto p-2">
+      <div className="relative overflow-auto p-2">
         <table className="cell-grid">
           <thead>
             <tr>
@@ -203,8 +201,6 @@ export function ExcelTemplateView({
             })}
           </tbody>
         </table>
-        </div>{/* /스크롤 그리드 */}
-
         {/* 중앙 오버레이 버튼 그룹 */}
         {(hwpLoaded || mappings.length > 0) && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -230,7 +226,7 @@ export function ExcelTemplateView({
             </div>
           </div>
         )}
-      </div>{/* /relative wrapper */}
+      </div>
     </div>
   );
 }
